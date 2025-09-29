@@ -6,11 +6,13 @@ Sends update reports via SMTP email.
 
 import smtplib
 import logging
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from .package_managers import PackageUpdate
 from .inventory import Host
@@ -73,6 +75,9 @@ class EmailSender:
             subject = self._generate_subject(reports)
             html_body = self._generate_html_body(reports)
             text_body = self._generate_text_body(reports)
+            
+            # Save HTML report to reports/ directory with datestamp
+            self._save_html_report(html_body)
             
             # Create message
             msg = MIMEMultipart('alternative')
@@ -286,31 +291,85 @@ Hosts with Errors: {len(hosts_with_errors)}
         
         return text
     
+    def _save_html_report(self, html_body: str) -> None:
+        """Save HTML report to reports/ directory with datestamp."""
+        try:
+            # Create reports directory if it doesn't exist
+            reports_dir = Path("reports")
+            reports_dir.mkdir(exist_ok=True)
+            
+            # Generate filename with datestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"miniupdate_report_{timestamp}.html"
+            filepath = reports_dir / filename
+            
+            # Write HTML report to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(html_body)
+                
+            logger.info(f"HTML report saved to {filepath}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save HTML report: {e}")
+    
     def _send_email(self, msg: MIMEMultipart, to_emails: List[str]) -> bool:
         """Send the email message via SMTP."""
         try:
+            logger.debug(f"Initiating SMTP connection to {self.smtp_config['smtp_server']}:{self.smtp_config['smtp_port']}")
+            logger.debug(f"TLS enabled: {self.smtp_config.get('use_tls', True)}")
+            logger.debug(f"Recipients: {', '.join(to_emails)}")
+            logger.debug(f"From: {self.smtp_config['from_email']}")
+            
             # Create SMTP connection
             if self.smtp_config.get('use_tls', True):
+                logger.debug("Creating SMTP connection with TLS")
                 server = smtplib.SMTP(self.smtp_config['smtp_server'], 
                                     self.smtp_config['smtp_port'])
+                logger.debug("Starting TLS encryption")
                 server.starttls()
             else:
+                logger.debug("Creating SMTP connection without TLS")
                 server = smtplib.SMTP(self.smtp_config['smtp_server'], 
                                     self.smtp_config['smtp_port'])
+            
+            logger.debug("SMTP connection established")
             
             # Authenticate if credentials provided
             if 'username' in self.smtp_config and 'password' in self.smtp_config:
+                logger.debug(f"Authenticating as user: {self.smtp_config['username']}")
                 server.login(self.smtp_config['username'], 
                            self.smtp_config['password'])
+                logger.debug("SMTP authentication successful")
+            else:
+                logger.debug("No SMTP authentication credentials provided")
             
             # Send email
+            logger.debug("Sending email message...")
             text = msg.as_string()
+            logger.debug(f"Email message size: {len(text)} bytes")
             server.sendmail(self.smtp_config['from_email'], to_emails, text)
             server.quit()
+            logger.debug("SMTP connection closed")
             
             logger.info(f"Update report sent to {', '.join(to_emails)}")
             return True
             
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP Authentication failed: {e}")
+            logger.debug(f"Check username/password for {self.smtp_config.get('username', 'N/A')}")
+            return False
+        except smtplib.SMTPConnectError as e:
+            logger.error(f"Failed to connect to SMTP server: {e}")
+            logger.debug(f"Server: {self.smtp_config['smtp_server']}:{self.smtp_config['smtp_port']}")
+            return False
+        except smtplib.SMTPRecipientsRefused as e:
+            logger.error(f"Recipients refused by SMTP server: {e}")
+            logger.debug(f"Rejected recipients: {e.recipients}")
+            return False
+        except smtplib.SMTPDataError as e:
+            logger.error(f"SMTP data error: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to send email via SMTP: {e}")
+            logger.debug(f"Error type: {type(e).__name__}")
             return False
