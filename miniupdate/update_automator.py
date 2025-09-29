@@ -242,8 +242,16 @@ class UpdateAutomator:
                 
                 # Apply updates
                 logger.info(f"Applying {len(updates)} updates on {host.name}")
-                if not package_manager.apply_updates():
+                success, error_output = package_manager.apply_updates()
+                if not success:
                     error_details = "Failed to apply package updates"
+                    if error_output:
+                        error_details += f"\n{error_output}"
+                    
+                    # Update the report with command output for email
+                    update_report = UpdateReport(host, os_info, updates, 
+                                               error="Failed to apply package updates",
+                                               command_output=error_output)
                     
                     # Revert snapshot if available
                     if snapshot_name and self.proxmox_client and vm_mapping:
