@@ -1,0 +1,14 @@
+# VM Mapping Configuration for miniupdate
+# Maps Ansible inventory host names to Proxmox VM IDs and nodes
+
+[vms.web1]
+node = "pve-node1"
+vmid = 100
+
+[vms.web2]
+node = "pve-node1"
+vmid = 101
+
+[vms.db1]
+node = "pve-node2"
+vmid = 200
