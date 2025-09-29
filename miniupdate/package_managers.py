@@ -69,7 +69,7 @@ class AptPackageManager(PackageManager):
         """Refresh APT cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'apt-get update -qq', timeout=300
+                'sudo apt-get update -qq', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -87,7 +87,7 @@ class AptPackageManager(PackageManager):
         try:
             # Get list of upgradable packages
             exit_code, stdout, stderr = self.connection.execute_command(
-                'apt list --upgradable 2>/dev/null | grep -v "WARNING"', 
+                'sudo apt list --upgradable 2>/dev/null | grep -v "WARNING"', 
                 timeout=120
             )
             
@@ -150,7 +150,7 @@ class AptPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y', 
+                'sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y', 
                 timeout=1800  # 30 minutes for updates
             )
             
@@ -173,7 +173,7 @@ class YumPackageManager(PackageManager):
         """Refresh YUM cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'yum clean all && yum makecache fast', timeout=300
+                'sudo yum clean all && sudo yum makecache fast', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -191,7 +191,7 @@ class YumPackageManager(PackageManager):
         try:
             # Get list of available updates
             exit_code, stdout, stderr = self.connection.execute_command(
-                'yum check-update --quiet', timeout=120
+                'sudo yum check-update --quiet', timeout=120
             )
             
             # yum check-update returns 100 if updates are available, 0 if none
@@ -246,7 +246,7 @@ class YumPackageManager(PackageManager):
         """Mark security updates using yum security plugin."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'yum --security check-update --quiet', timeout=120
+                'sudo yum --security check-update --quiet', timeout=120
             )
             
             if exit_code == 100:  # Security updates available
@@ -279,7 +279,7 @@ class YumPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'yum update -y', 
+                'sudo yum update -y', 
                 timeout=1800  # 30 minutes for updates
             )
             
@@ -302,7 +302,7 @@ class DnfPackageManager(PackageManager):
         """Refresh DNF cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'dnf clean all && dnf makecache', timeout=300
+                'sudo dnf clean all && sudo dnf makecache', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -320,7 +320,7 @@ class DnfPackageManager(PackageManager):
         try:
             # Get list of available updates
             exit_code, stdout, stderr = self.connection.execute_command(
-                'dnf check-update --quiet', timeout=120
+                'sudo dnf check-update --quiet', timeout=120
             )
             
             # dnf check-update returns 100 if updates are available
@@ -346,7 +346,7 @@ class DnfPackageManager(PackageManager):
         """Mark security updates using dnf security plugin."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'dnf --security check-update --quiet', timeout=120
+                'sudo dnf --security check-update --quiet', timeout=120
             )
             
             if exit_code == 100:  # Security updates available
@@ -379,7 +379,7 @@ class DnfPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'dnf update -y', 
+                'sudo dnf update -y', 
                 timeout=1800  # 30 minutes for updates
             )
             
@@ -402,7 +402,7 @@ class ZypperPackageManager(PackageManager):
         """Refresh Zypper cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'zypper --quiet refresh', timeout=300
+                'sudo zypper --quiet refresh', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -419,7 +419,7 @@ class ZypperPackageManager(PackageManager):
         
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'zypper --quiet list-updates', timeout=120
+                'sudo zypper --quiet list-updates', timeout=120
             )
             
             if exit_code != 0:
@@ -466,7 +466,7 @@ class ZypperPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'zypper --non-interactive update', 
+                'sudo zypper --non-interactive update', 
                 timeout=1800  # 30 minutes for updates
             )
             
@@ -489,7 +489,7 @@ class PackmanPackageManager(PackageManager):
         """Refresh Pacman cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pacman -Sy', timeout=300
+                'sudo pacman -Sy', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -506,7 +506,7 @@ class PackmanPackageManager(PackageManager):
         
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pacman -Qu', timeout=120
+                'sudo pacman -Qu', timeout=120
             )
             
             if exit_code not in [0, 1]:  # 1 means no updates
@@ -560,7 +560,7 @@ class PackmanPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pacman -Su --noconfirm', 
+                'sudo pacman -Su --noconfirm', 
                 timeout=1800  # 30 minutes for updates
             )
             
@@ -583,7 +583,7 @@ class PkgPackageManager(PackageManager):
         """Refresh pkg cache."""
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pkg update', timeout=300
+                'sudo pkg update', timeout=300
             )
             if exit_code == 0:
                 return True
@@ -600,7 +600,7 @@ class PkgPackageManager(PackageManager):
         
         try:
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pkg version -vL=', timeout=120
+                'sudo pkg version -vL=', timeout=120
             )
             
             if exit_code != 0:
@@ -671,7 +671,7 @@ class PkgPackageManager(PackageManager):
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
-                'pkg upgrade -y', 
+                'sudo pkg upgrade -y', 
                 timeout=1800  # 30 minutes for updates
             )
             
