@@ -7,7 +7,7 @@ email credentials and inventory paths.
 
 import toml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 
 
@@ -118,6 +118,12 @@ class Config:
             return {}
         return self.config['updates']
     
+    @property
+    def update_opt_out_hosts(self) -> List[str]:
+        """Get list of hosts that should not receive automatic updates."""
+        update_config = self.update_config
+        return update_config.get('opt_out_hosts', [])
+    
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by key."""
         return self.config.get(key, default)
@@ -181,7 +187,8 @@ def create_example_config(path: str = "config.toml.example") -> None:
             "ping_interval": 5,     # Check every 5 seconds
             "snapshot_name_prefix": "pre-update",
             "cleanup_snapshots": True,
-            "snapshot_retention_days": 7
+            "snapshot_retention_days": 7,
+            "opt_out_hosts": []     # List of hosts to exclude from automatic updates (check-only mode)
         }
     }
     
