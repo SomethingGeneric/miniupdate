@@ -57,8 +57,13 @@ class PackageManager(ABC):
         pass
     
     @abstractmethod
-    def apply_updates(self) -> bool:
-        """Apply all available updates."""
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
+        """Apply all available updates.
+        
+        Returns:
+            Tuple of (success: bool, error_output: Optional[str])
+            If success is False, error_output contains stdout/stderr from failed command
+        """
         pass
 
 
@@ -140,13 +145,13 @@ class AptPackageManager(PackageManager):
             if any(sec_repo in update.repository for sec_repo in security_repos):
                 update.security = True
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available APT updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -156,14 +161,18 @@ class AptPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied APT updates")
-                return True
+                return True, None
             else:
+                error_output = f"APT upgrade failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply APT updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying APT updates: {e}")
-            return False
+            error_msg = f"Error applying APT updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 class YumPackageManager(PackageManager):
@@ -269,13 +278,13 @@ class YumPackageManager(PackageManager):
         except Exception as e:
             logger.debug(f"Could not check YUM security updates: {e}")
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available YUM updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -285,14 +294,18 @@ class YumPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied YUM updates")
-                return True
+                return True, None
             else:
+                error_output = f"YUM update failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply YUM updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying YUM updates: {e}")
-            return False
+            error_msg = f"Error applying YUM updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 class DnfPackageManager(PackageManager):
@@ -369,13 +382,13 @@ class DnfPackageManager(PackageManager):
         except Exception as e:
             logger.debug(f"Could not check DNF security updates: {e}")
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available DNF updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -385,14 +398,18 @@ class DnfPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied DNF updates")
-                return True
+                return True, None
             else:
+                error_output = f"DNF update failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply DNF updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying DNF updates: {e}")
-            return False
+            error_msg = f"Error applying DNF updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 class ZypperPackageManager(PackageManager):
@@ -456,13 +473,13 @@ class ZypperPackageManager(PackageManager):
         
         return updates
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available Zypper updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -472,14 +489,18 @@ class ZypperPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied Zypper updates")
-                return True
+                return True, None
             else:
+                error_output = f"Zypper update failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply Zypper updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying Zypper updates: {e}")
-            return False
+            error_msg = f"Error applying Zypper updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 class PackmanPackageManager(PackageManager):
@@ -550,13 +571,13 @@ class PackmanPackageManager(PackageManager):
         
         return updates
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available Pacman updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -566,14 +587,18 @@ class PackmanPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied Pacman updates")
-                return True
+                return True, None
             else:
+                error_output = f"Pacman update failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply Pacman updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying Pacman updates: {e}")
-            return False
+            error_msg = f"Error applying Pacman updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 class PkgPackageManager(PackageManager):
@@ -661,13 +686,13 @@ class PkgPackageManager(PackageManager):
         
         return updates
     
-    def apply_updates(self) -> bool:
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
         """Apply all available pkg updates."""
         try:
             # Update package cache first
             if not self.refresh_cache():
                 logger.error("Failed to refresh package cache before applying updates")
-                return False
+                return False, "Failed to refresh package cache before applying updates"
             
             # Apply updates non-interactively
             exit_code, stdout, stderr = self.connection.execute_command(
@@ -677,14 +702,18 @@ class PkgPackageManager(PackageManager):
             
             if exit_code == 0:
                 logger.info("Successfully applied pkg updates")
-                return True
+                return True, None
             else:
+                error_output = f"pkg upgrade failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
                 logger.error(f"Failed to apply pkg updates: {stderr}")
-                return False
+                return False, error_output
                 
         except Exception as e:
-            logger.error(f"Error applying pkg updates: {e}")
-            return False
+            error_msg = f"Error applying pkg updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
 
 def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[PackageManager]:

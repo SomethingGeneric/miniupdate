@@ -27,11 +27,13 @@ class UpdateReport:
     """Contains update information for a single host."""
     
     def __init__(self, host: Host, os_info: Optional[OSInfo], 
-                 updates: List[PackageUpdate], error: Optional[str] = None):
+                 updates: List[PackageUpdate], error: Optional[str] = None,
+                 command_output: Optional[str] = None):
         self.host = host
         self.os_info = os_info
         self.updates = updates
         self.error = error
+        self.command_output = command_output  # Store stdout/stderr from failed commands
         self.timestamp = datetime.now()
     
     @property
@@ -213,6 +215,9 @@ class EmailSender:
         
         if report.error:
             html += f'<div style="color: red;">Error: {report.error}</div>'
+            # Show command output if available (for failed package updates)  
+            if report.command_output:
+                html += f'<div><strong>Command Output:</strong><pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow-y: auto; background-color: #f8f8f8; padding: 8px; border-radius: 3px;">{report.command_output}</pre></div>'
         elif not report.has_updates:
             html += '<div style="color: green;">✓ No updates available</div>'
         else:
@@ -275,6 +280,11 @@ Hosts with Errors: {len(hosts_with_errors)}
             
             if report.error:
                 text += f"ERROR: {report.error}\n"
+                # Show command output if available (for failed package updates)
+                if report.command_output:
+                    text += f"Command Output:\n"
+                    for line in report.command_output.split('\n'):
+                        text += f"  {line}\n"
             elif not report.has_updates:
                 text += "Status: No updates available\n"
             else:
@@ -737,6 +747,10 @@ Hosts with Errors: {len(hosts_with_errors)}
         elif report.update_report.error:
             html += f'<div class="error-details"><strong>Error:</strong> {report.update_report.error}</div>'
         
+        # Show command output if available (for failed package updates)
+        if report.update_report.command_output:
+            html += f'<div class="error-details"><strong>Command Output:</strong><pre style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow-y: auto;">{report.update_report.command_output}</pre></div>'
+        
         html += '</div>'
         return html
     
@@ -907,5 +921,12 @@ Hosts with Errors: {len(hosts_with_errors)}
             text += f"  Error: {report.error_details}\n"
         elif report.update_report.error:
             text += f"  Error: {report.update_report.error}\n"
+        
+        # Command output if available (for failed package updates)
+        if report.update_report.command_output:
+            text += f"  Command Output:\n"
+            # Indent the command output for better readability
+            for line in report.update_report.command_output.split('\n'):
+                text += f"    {line}\n"
         
         return text
