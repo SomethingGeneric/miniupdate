@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 class UpdateResult(Enum):
     """Update operation results."""
     SUCCESS = "success"
+    OPT_OUT = "opt_out"
+    NO_UPDATES = "no_updates"
     FAILED_SNAPSHOT = "failed_snapshot"
     FAILED_UPDATES = "failed_updates"  
     FAILED_REBOOT = "failed_reboot"
@@ -173,13 +175,15 @@ class UpdateAutomator:
                 if is_opt_out_host or not self.update_config.get('apply_updates', False):
                     if is_opt_out_host:
                         logger.info(f"Host {host.name} is in opt-out list - only checking updates")
+                        result = UpdateResult.OPT_OUT
                     else:
                         logger.info(f"Update application disabled - only checking updates on {host.name}")
+                        result = UpdateResult.OPT_OUT  # Treat global disable same as opt-out
                     return AutomatedUpdateReport(
                         host=host,
                         vm_mapping=vm_mapping,
                         update_report=update_report,
-                        result=UpdateResult.SUCCESS,
+                        result=result,
                         snapshot_name=None,
                         error_details=None,
                         start_time=start_time,
@@ -193,7 +197,7 @@ class UpdateAutomator:
                         host=host,
                         vm_mapping=vm_mapping,
                         update_report=update_report,
-                        result=UpdateResult.SUCCESS,
+                        result=UpdateResult.NO_UPDATES,
                         snapshot_name=None,
                         error_details=None,
                         start_time=start_time,
