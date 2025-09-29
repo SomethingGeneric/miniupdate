@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 class UpdateResult(Enum):
     """Update operation results."""
     SUCCESS = "success"
+    OPT_OUT = "opt_out"
+    NO_UPDATES = "no_updates"
     FAILED_SNAPSHOT = "failed_snapshot"
     FAILED_UPDATES = "failed_updates"  
     FAILED_REBOOT = "failed_reboot"
@@ -173,13 +175,15 @@ class UpdateAutomator:
                 if is_opt_out_host or not self.update_config.get('apply_updates', False):
                     if is_opt_out_host:
                         logger.info(f"Host {host.name} is in opt-out list - only checking updates")
+                        result = UpdateResult.OPT_OUT
                     else:
                         logger.info(f"Update application disabled - only checking updates on {host.name}")
+                        result = UpdateResult.OPT_OUT  # Treat global disable same as opt-out
                     return AutomatedUpdateReport(
                         host=host,
                         vm_mapping=vm_mapping,
                         update_report=update_report,
-                        result=UpdateResult.SUCCESS,
+                        result=result,
                         snapshot_name=None,
                         error_details=None,
                         start_time=start_time,
@@ -193,7 +197,7 @@ class UpdateAutomator:
                         host=host,
                         vm_mapping=vm_mapping,
                         update_report=update_report,
-                        result=UpdateResult.SUCCESS,
+                        result=UpdateResult.NO_UPDATES,
                         snapshot_name=None,
                         error_details=None,
                         start_time=start_time,
@@ -247,13 +251,16 @@ class UpdateAutomator:
                 
                 logger.info(f"Successfully applied updates on {host.name}")
                 
-                # Reboot if configured
+                # Reboot if configured (only for hosts that actually received updates)
                 if self.update_config.get('reboot_after_updates', False):
+                    logger.info(f"Reboot after updates is enabled - proceeding with reboot for {host.name}")
                     reboot_result = self._handle_reboot_and_verification(
                         host, vm_mapping, snapshot_name, start_time
                     )
                     if reboot_result:
                         return reboot_result
+                else:
+                    logger.info(f"Reboot after updates is disabled - skipping reboot for {host.name}")
                 
                 # Clean up snapshot if successful and configured
                 if (snapshot_name and self.proxmox_client and vm_mapping and 
@@ -299,7 +306,8 @@ class UpdateAutomator:
                 vm_mapping.node,
                 vm_mapping.vmid,
                 snapshot_name,
-                f"Pre-update snapshot created by miniupdate at {start_time}"
+                f"Pre-update snapshot created by miniupdate at {start_time}",
+                include_ram=False  # Exclude RAM for faster, more reliable snapshots
             )
             
             # Wait for snapshot task to complete if UPID is returned

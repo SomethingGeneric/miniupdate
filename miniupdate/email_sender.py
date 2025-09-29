@@ -402,12 +402,13 @@ Hosts with Errors: {len(hosts_with_errors)}
             logger.debug(f"Error type: {type(e).__name__}")
             return False
     
-    def send_automated_update_report(self, reports) -> bool:
+    def send_automated_update_report(self, reports, unmapped_hosts=None) -> bool:
         """
         Send automated update report email.
         
         Args:
             reports: List of AutomatedUpdateReport objects
+            unmapped_hosts: List of hosts not in VM mapping or opt-out list
             
         Returns:
             True if email sent successfully, False otherwise
@@ -418,8 +419,8 @@ Hosts with Errors: {len(hosts_with_errors)}
             
             # Generate email content
             subject = self._generate_automated_subject(reports)
-            html_body = self._generate_automated_html_body(reports)
-            text_body = self._generate_automated_text_body(reports)
+            html_body = self._generate_automated_html_body(reports, unmapped_hosts)
+            text_body = self._generate_automated_text_body(reports, unmapped_hosts)
             
             # Save HTML report to reports/ directory with datestamp
             self._save_html_report(html_body, "automated_update")
@@ -453,22 +454,28 @@ Hosts with Errors: {len(hosts_with_errors)}
         from .update_automator import UpdateResult
         
         total = len(reports)
-        successful = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
-        no_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        successful = sum(1 for r in reports if r.result == UpdateResult.SUCCESS)
+        no_updates = sum(1 for r in reports if r.result == UpdateResult.NO_UPDATES)
+        opt_out = sum(1 for r in reports if r.result == UpdateResult.OPT_OUT)
         critical = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
         reverted = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
-        failed = total - successful - no_updates - critical - reverted
+        failed = total - successful - no_updates - opt_out - critical - reverted
         
         if critical > 0:
             return f"🚨 URGENT: {critical} host(s) failed update+revert, {failed} other failures - miniupdate"
         elif failed > 0 or reverted > 0:
             return f"⚠️ Update Issues: {failed} failed, {reverted} reverted, {successful} success - miniupdate"
         elif successful > 0:
-            return f"✅ Updates Applied: {successful} updated, {no_updates} up-to-date - miniupdate"
+            if opt_out > 0:
+                return f"✅ Updates Applied: {successful} updated, {opt_out} opt-out, {no_updates} up-to-date - miniupdate"
+            else:
+                return f"✅ Updates Applied: {successful} updated, {no_updates} up-to-date - miniupdate"
+        elif opt_out > 0:
+            return f"📋 Check Complete: {opt_out} opt-out (manual updates needed), {no_updates} up-to-date - miniupdate"
         else:
             return f"📋 No Updates Needed: {no_updates} hosts checked - miniupdate"
     
-    def _generate_automated_html_body(self, reports) -> str:
+    def _generate_automated_html_body(self, reports, unmapped_hosts=None) -> str:
         """Generate HTML email body for automated updates."""
         from .update_automator import UpdateResult
         
@@ -509,6 +516,10 @@ Hosts with Errors: {len(hosts_with_errors)}
         html += self._generate_automated_header_html()
         html += self._generate_automated_summary_html(reports)
         
+        # Show unmapped hosts warning first if there are any
+        if unmapped_hosts:
+            html += self._generate_unmapped_hosts_html(unmapped_hosts)
+        
         # Group hosts by result type for better organization
         critical_hosts = [r for r in reports if r.result == UpdateResult.REVERT_FAILED]
         reverted_hosts = [r for r in reports if r.result == UpdateResult.REVERTED]
@@ -517,6 +528,8 @@ Hosts with Errors: {len(hosts_with_errors)}
             UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
         ]]
         successful_hosts = [r for r in reports if r.result == UpdateResult.SUCCESS]
+        opt_out_hosts = [r for r in reports if r.result == UpdateResult.OPT_OUT]
+        no_update_hosts = [r for r in reports if r.result == UpdateResult.NO_UPDATES]
         
         # Show critical failures first
         if critical_hosts:
@@ -536,10 +549,21 @@ Hosts with Errors: {len(hosts_with_errors)}
             for report in failed_hosts:
                 html += self._generate_automated_host_html(report)
         
-        # Finally successful hosts
+        # Then opt-out hosts (check-only)
+        if opt_out_hosts:
+            html += '<h2 style="color: #ff9800;">⚠️ Opt-out Hosts (Check Only)</h2>'
+            for report in opt_out_hosts:
+                html += self._generate_automated_host_html(report)
+        
+        # Finally successful hosts and no-update hosts
         if successful_hosts:
-            html += '<h2 style="color: #28a745;">✅ Successful Operations</h2>'
+            html += '<h2 style="color: #28a745;">✅ Successfully Updated</h2>'
             for report in successful_hosts:
+                html += self._generate_automated_host_html(report)
+                
+        if no_update_hosts:
+            html += '<h2 style="color: #6c757d;">📋 No Updates Needed</h2>'
+            for report in no_update_hosts:
                 html += self._generate_automated_host_html(report)
         
         html += """
@@ -564,16 +588,17 @@ Hosts with Errors: {len(hosts_with_errors)}
         from .update_automator import UpdateResult
         
         total = len(reports)
-        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
-        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.NO_UPDATES)
+        opt_out_hosts = sum(1 for r in reports if r.result == UpdateResult.OPT_OUT)
         critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
         reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
-        other_failures = total - successful_updates - no_updates_needed - critical_failures - reverted_hosts
+        other_failures = total - successful_updates - no_updates_needed - opt_out_hosts - critical_failures - reverted_hosts
         
         total_updates_applied = sum(len(r.update_report.updates) for r in reports 
-                                  if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+                                  if r.result == UpdateResult.SUCCESS)
         total_security_updates = sum(len(r.update_report.security_updates) for r in reports 
-                                   if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+                                   if r.result == UpdateResult.SUCCESS)
         
         html = f"""
         <div class="summary">
@@ -582,6 +607,7 @@ Hosts with Errors: {len(hosts_with_errors)}
                 <li><strong>Total hosts processed:</strong> {total}</li>
                 <li><strong>✅ Successfully updated:</strong> {successful_updates}</li>
                 <li><strong>📋 No updates needed:</strong> {no_updates_needed}</li>
+                <li><strong>⚠️ Opt-out hosts (check-only):</strong> {opt_out_hosts}</li>
                 <li><strong>🔄 Reverted to snapshot:</strong> {reverted_hosts}</li>
                 <li><strong>❌ Other failures:</strong> {other_failures}</li>
         """
@@ -597,6 +623,31 @@ Hosts with Errors: {len(hosts_with_errors)}
         
         html += """
             </ul>
+        </div>
+        """
+        
+        return html
+    
+    def _generate_unmapped_hosts_html(self, unmapped_hosts) -> str:
+        """Generate HTML error block for unmapped inventory hosts."""
+        html = """
+        <div class="summary" style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h2 style="color: #721c24;">🚨 Configuration Warning: Unmapped Inventory Hosts</h2>
+            <p><strong>The following hosts are not configured in either the VM mapping file or the opt-out list:</strong></p>
+            <ul>
+        """
+        
+        for host in unmapped_hosts:
+            html += f'<li><strong>{host.name}</strong> ({host.hostname})</li>'
+        
+        html += """
+            </ul>
+            <p><strong>Action Required:</strong></p>
+            <ul>
+                <li>Add these hosts to your <code>vm_mapping.toml</code> file if they should receive automated updates, OR</li>
+                <li>Add them to the <code>opt_out_hosts</code> list in <code>config.toml</code> if they should only be checked (no automated updates)</li>
+            </ul>
+            <p><em>Without proper configuration, these hosts may not behave as expected during automated updates.</em></p>
         </div>
         """
         
@@ -620,14 +671,22 @@ Hosts with Errors: {len(hosts_with_errors)}
             css_class = "host failed"
             status_class = "status failed"
             status_text = f"Failed: {report.result.value.replace('_', ' ').title()}"
-        elif report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+        elif report.result == UpdateResult.SUCCESS:
             css_class = "host success"
             status_class = "status success"
             status_text = "Successfully Updated"
-        else:
+        elif report.result == UpdateResult.OPT_OUT:
+            css_class = "host opt-out"
+            status_class = "status warning"
+            status_text = "Opt-out (Check Only)"
+        elif report.result == UpdateResult.NO_UPDATES:
             css_class = "host no-updates"
             status_class = "status success"
             status_text = "No Updates Needed"
+        else:
+            css_class = "host unknown"
+            status_class = "status warning"
+            status_text = f"Unknown: {report.result.value}"
         
         html = f'<div class="{css_class}">'
         html += f'<div class="host-name">{report.host.name} ({report.host.hostname})</div>'
@@ -649,20 +708,24 @@ Hosts with Errors: {len(hosts_with_errors)}
                 html += f' (Snapshot: {report.snapshot_name})'
             html += '</div>'
         
-        # Show updates if successful
-        if report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+        # Show updates if successful or opt-out
+        if (report.result == UpdateResult.SUCCESS or report.result == UpdateResult.OPT_OUT) and report.update_report.has_updates:
             security_updates = report.update_report.security_updates
             regular_updates = report.update_report.regular_updates
             
+            # Add prefix for opt-out hosts to clarify these are available updates, not applied ones
+            prefix = "Available " if report.result == UpdateResult.OPT_OUT else ""
+            action = "require manual application" if report.result == UpdateResult.OPT_OUT else "applied"
+            
             if security_updates:
-                html += f'<div><strong>🔒 Security Updates ({len(security_updates)}):</strong></div>'
+                html += f'<div><strong>🔒 {prefix}Security Updates ({len(security_updates)}) - {action}:</strong></div>'
                 html += '<div class="updates-list">'
                 for update in security_updates:
                     html += f'<div class="update-item security-update">{update}</div>'
                 html += '</div>'
             
             if regular_updates:
-                html += f'<div><strong>Regular Updates ({len(regular_updates)}):</strong></div>'
+                html += f'<div><strong>{prefix}Regular Updates ({len(regular_updates)}) - {action}:</strong></div>'
                 html += '<div class="updates-list">'
                 for update in regular_updates:
                     html += f'<div class="update-item">{update}</div>'
@@ -677,7 +740,7 @@ Hosts with Errors: {len(hosts_with_errors)}
         html += '</div>'
         return html
     
-    def _generate_automated_text_body(self, reports) -> str:
+    def _generate_automated_text_body(self, reports, unmapped_hosts=None) -> str:
         """Generate plain text email body for automated updates."""
         from .update_automator import UpdateResult
         
@@ -687,17 +750,19 @@ Hosts with Errors: {len(hosts_with_errors)}
         
         # Summary
         total = len(reports)
-        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
-        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.NO_UPDATES)
+        opt_out_hosts = sum(1 for r in reports if r.result == UpdateResult.OPT_OUT)
         critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
         reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
-        other_failures = total - successful_updates - no_updates_needed - critical_failures - reverted_hosts
+        other_failures = total - successful_updates - no_updates_needed - opt_out_hosts - critical_failures - reverted_hosts
         
         text += "📊 SUMMARY\n"
         text += "-" * 20 + "\n"
         text += f"Total hosts processed: {total}\n"
         text += f"✅ Successfully updated: {successful_updates}\n"
         text += f"📋 No updates needed: {no_updates_needed}\n"
+        text += f"⚠️ Opt-out hosts (check-only): {opt_out_hosts}\n"
         text += f"🔄 Reverted to snapshot: {reverted_hosts}\n"
         text += f"❌ Other failures: {other_failures}\n"
         
@@ -705,6 +770,23 @@ Hosts with Errors: {len(hosts_with_errors)}
             text += f"🚨 CRITICAL: Revert failures: {critical_failures}\n"
         
         text += "\n"
+        
+        # Show unmapped hosts warning if there are any
+        if unmapped_hosts:
+            text += "🚨 CONFIGURATION WARNING: UNMAPPED INVENTORY HOSTS\n"
+            text += "=" * 60 + "\n"
+            text += "The following hosts are not configured in either the VM mapping\n"
+            text += "file or the opt-out list:\n\n"
+            for host in unmapped_hosts:
+                text += f"  - {host.name} ({host.hostname})\n"
+            text += "\nACTION REQUIRED:\n"
+            text += "- Add these hosts to your vm_mapping.toml file if they should\n"
+            text += "  receive automated updates, OR\n"
+            text += "- Add them to the opt_out_hosts list in config.toml if they\n"
+            text += "  should only be checked (no automated updates)\n"
+            text += "\nWithout proper configuration, these hosts may not behave as\n"
+            text += "expected during automated updates.\n"
+            text += "\n"
         
         # Group and show hosts
         critical_hosts = [r for r in reports if r.result == UpdateResult.REVERT_FAILED]
@@ -714,6 +796,8 @@ Hosts with Errors: {len(hosts_with_errors)}
             UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
         ]]
         successful_hosts = [r for r in reports if r.result == UpdateResult.SUCCESS]
+        opt_out_hosts = [r for r in reports if r.result == UpdateResult.OPT_OUT]
+        no_update_hosts = [r for r in reports if r.result == UpdateResult.NO_UPDATES]
         
         if critical_hosts:
             text += "🚨 CRITICAL FAILURES (Revert Failed)\n"
@@ -737,9 +821,23 @@ Hosts with Errors: {len(hosts_with_errors)}
                 text += "\n"
         
         if successful_hosts:
-            text += "✅ SUCCESSFUL OPERATIONS\n"
+            text += "✅ SUCCESSFULLY UPDATED\n"
             text += "-" * 25 + "\n"
             for report in successful_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        if opt_out_hosts:
+            text += "⚠️ OPT-OUT HOSTS (CHECK ONLY)\n"
+            text += "-" * 30 + "\n"
+            for report in opt_out_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        if no_update_hosts:
+            text += "📋 NO UPDATES NEEDED\n"
+            text += "-" * 25 + "\n"
+            for report in no_update_hosts:
                 text += self._generate_automated_host_text(report)
                 text += "\n"
         
@@ -759,10 +857,14 @@ Hosts with Errors: {len(hosts_with_errors)}
         elif report.result in [UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
                              UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT]:
             text += f"  Status: ❌ Failed - {report.result.value.replace('_', ' ').title()}\n"
-        elif report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+        elif report.result == UpdateResult.SUCCESS:
             text += "  Status: ✅ Successfully Updated\n"
-        else:
+        elif report.result == UpdateResult.OPT_OUT:
+            text += "  Status: ⚠️ Opt-out (Check Only)\n"
+        elif report.result == UpdateResult.NO_UPDATES:
             text += "  Status: 📋 No Updates Needed\n"
+        else:
+            text += f"  Status: ❓ Unknown ({report.result.value})\n"
         
         # Timing
         if report.end_time:
@@ -780,19 +882,25 @@ Hosts with Errors: {len(hosts_with_errors)}
                 text += f"  Snapshot: {report.snapshot_name}\n"
         
         # Updates
-        if report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+        if (report.result == UpdateResult.SUCCESS or report.result == UpdateResult.OPT_OUT) and report.update_report.has_updates:
             security_updates = report.update_report.security_updates
             regular_updates = report.update_report.regular_updates
             
+            # Add prefix for opt-out hosts to clarify these are available updates, not applied ones
+            prefix = "Available " if report.result == UpdateResult.OPT_OUT else ""
+            
             if security_updates:
-                text += f"  🔒 Security Updates ({len(security_updates)}):\n"
+                text += f"  🔒 {prefix}Security Updates ({len(security_updates)}):\n"
                 for update in security_updates:
                     text += f"    - {update}\n"
             
             if regular_updates:
-                text += f"  Regular Updates ({len(regular_updates)}):\n"
+                text += f"  {prefix}Regular Updates ({len(regular_updates)}):\n"
                 for update in regular_updates:
                     text += f"    - {update}\n"
+                    
+            if report.result == UpdateResult.OPT_OUT:
+                text += "  ⚠️ Note: Updates listed above require manual application\n"
         
         # Errors
         if report.error_details:

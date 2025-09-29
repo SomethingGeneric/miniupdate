@@ -34,6 +34,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def validate_inventory_mapping(hosts, config, vm_mapper):
+    """
+    Validate that all inventory hosts are either:
+    1. In the VM mapping TOML file, OR  
+    2. Explicitly listed in the opt-out hosts list
+    
+    Returns a list of unmapped hosts that need attention.
+    """
+    unmapped_hosts = []
+    opt_out_hosts = set(config.update_opt_out_hosts)
+    
+    for host in hosts:
+        has_vm_mapping = vm_mapper and vm_mapper.has_vm_mapping(host.name)
+        is_opt_out = host.name in opt_out_hosts
+        
+        if not has_vm_mapping and not is_opt_out:
+            unmapped_hosts.append(host)
+    
+    return unmapped_hosts
+
+
 def process_host(host, ssh_config, config, timeout=120):
     """Process a single host - detect OS and check for updates."""
     logger.info(f"Processing host: {host.name}")
@@ -211,6 +232,14 @@ def update(ctx, parallel, timeout, dry_run):
         # Initialize update automator
         automator = UpdateAutomator(config)
         
+        # Validate inventory mapping before processing
+        unmapped_hosts = validate_inventory_mapping(hosts, config, automator.vm_mapper)
+        if unmapped_hosts:
+            logger.warning(f"Found {len(unmapped_hosts)} hosts not in VM mapping or opt-out list:")
+            for host in unmapped_hosts:
+                logger.warning(f"  - {host.name} ({host.hostname})")
+            logger.warning("These hosts will be processed but may need manual configuration.")
+        
         if dry_run:
             logger.info("DRY RUN MODE - No updates will be applied")
             # For dry run, just check what updates are available
@@ -236,10 +265,14 @@ def update(ctx, parallel, timeout, dry_run):
                     
                     # Log summary for this host
                     if report.result == UpdateResult.SUCCESS:
+                        logger.info(f"{host.name}: SUCCESS - Applied {len(report.update_report.updates)} updates")
+                    elif report.result == UpdateResult.NO_UPDATES:
+                        logger.info(f"{host.name}: NO UPDATES - All packages up to date")
+                    elif report.result == UpdateResult.OPT_OUT:
                         if report.update_report.has_updates:
-                            logger.info(f"{host.name}: SUCCESS - Applied {len(report.update_report.updates)} updates")
+                            logger.info(f"{host.name}: OPT-OUT - {len(report.update_report.updates)} updates available (manual action required)")
                         else:
-                            logger.info(f"{host.name}: SUCCESS - No updates needed")
+                            logger.info(f"{host.name}: OPT-OUT - No updates available")
                     elif report.result == UpdateResult.REVERTED:
                         logger.error(f"{host.name}: REVERTED - {report.error_details}")
                     elif report.result == UpdateResult.REVERT_FAILED:
@@ -264,8 +297,9 @@ def update(ctx, parallel, timeout, dry_run):
         
         # Generate summary
         total_hosts = len(reports)
-        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
-        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.NO_UPDATES)
+        opt_out_hosts = sum(1 for r in reports if r.result == UpdateResult.OPT_OUT)
         failed_updates = sum(1 for r in reports if r.result in [
             UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
             UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
@@ -277,6 +311,7 @@ def update(ctx, parallel, timeout, dry_run):
         logger.info(f"Total hosts processed: {total_hosts}")
         logger.info(f"Successfully updated: {successful_updates}")
         logger.info(f"No updates needed: {no_updates_needed}")
+        logger.info(f"Opt-out hosts (check-only): {opt_out_hosts}")
         logger.info(f"Failed updates: {failed_updates}")
         logger.info(f"Reverted to snapshot: {reverted_hosts}")
         if critical_failures > 0:
@@ -286,7 +321,7 @@ def update(ctx, parallel, timeout, dry_run):
         logger.info("Sending automated update email report...")
         email_sender = EmailSender(config.smtp_config)
         
-        if email_sender.send_automated_update_report(reports):
+        if email_sender.send_automated_update_report(reports, unmapped_hosts):
             logger.info("Automated update email report sent successfully")
         else:
             logger.error("Failed to send automated update email report")
