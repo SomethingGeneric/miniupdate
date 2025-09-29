@@ -85,7 +85,7 @@ smtp_port = 587
 use_tls = true
 username = "your-email@example.com"
 password = "your-app-password"
-from_email = "your-email@example.com"
+from_email = "your-email@example.com"  # Must be a valid email address for strict SMTP servers
 to_email = ["sysadmin@example.com", "admin@example.com"]
 
 [inventory]
@@ -281,10 +281,10 @@ MIT License - see LICENSE file for details.
 
 ## Troubleshooting
 
-### Common Issues
+### Email Delivery Issues
 
-1. **SSH Connection Failures**
-   - Verify host accessibility: `ssh user@host`
+1. **SMTP Connection Failures**
+   - Verify host accessibility: `telnet smtp_server smtp_port`
    - Check SSH keys and agent
    - Ensure correct username and port
 
@@ -297,6 +297,7 @@ MIT License - see LICENSE file for details.
    - Verify SMTP settings and credentials
    - Check firewall rules for SMTP ports
    - Test with a simple email client first
+   - For strict SMTP servers (like maddy): ensure proper sender email format
 
 4. **Permission Errors**
    - Ensure SSH user has sudo/root access where needed
