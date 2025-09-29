@@ -1,0 +1,36 @@
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+use_tls = true
+username = "your-email@example.com"
+password = "your-app-password"
+from_email = "your-email@example.com"
+to_email = [ "sysadmin@example.com", "admin@example.com",]
+
+[inventory]
+# Local inventory file (relative to config file)
+path = "inventory.yml"
+
+# Alternative examples (uncomment one):
+# Absolute path
+# path = "/etc/ansible/inventory.yml"
+
+# Path using environment variable
+# path = "$ANSIBLE_INVENTORY_PATH/inventory.yml"
+
+# Path to external git repository
+# path = "~/git/infrastructure/ansible/inventory.yml"
+
+# Corporate shared inventory
+# path = "/shared/ansible-configs/production/inventory.yml"
+
+format = "ansible"
+
+[ssh]
+timeout = 30
+port = 22
+
+[settings]
+parallel_connections = 5
+log_level = "INFO"
+check_timeout = 120
