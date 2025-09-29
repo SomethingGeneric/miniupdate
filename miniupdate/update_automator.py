@@ -242,8 +242,16 @@ class UpdateAutomator:
                 
                 # Apply updates
                 logger.info(f"Applying {len(updates)} updates on {host.name}")
-                if not package_manager.apply_updates():
+                success, error_output = package_manager.apply_updates()
+                if not success:
                     error_details = "Failed to apply package updates"
+                    if error_output:
+                        error_details += f"\n{error_output}"
+                    
+                    # Update the report with command output for email
+                    update_report = UpdateReport(host, os_info, updates, 
+                                               error="Failed to apply package updates",
+                                               command_output=error_output)
                     
                     # Revert snapshot if available
                     if snapshot_name and self.proxmox_client and vm_mapping:
@@ -360,15 +368,20 @@ class UpdateAutomator:
             # Wait for rollback task to complete if UPID is returned
             if 'data' in response and isinstance(response['data'], str):
                 upid = response['data']
-                if self.proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
-                    logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
-                    return True
-                else:
+                if not self.proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
                     logger.error(f"Snapshot rollback task failed for VM {vm_mapping.vmid}")
                     return False
-            else:
-                logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
-                return True
+            
+            logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
+            
+            # Ensure VM is powered on after rollback
+            logger.info(f"Ensuring VM {vm_mapping.vmid} is powered on after snapshot restore")
+            if not self.proxmox_client.start_vm(vm_mapping.node, vm_mapping.vmid, timeout=60):
+                logger.error(f"Failed to power on VM {vm_mapping.vmid} after snapshot restore")
+                return False
+            
+            logger.info(f"VM {vm_mapping.vmid} is now powered on after snapshot restore")
+            return True
                 
         except Exception as e:
             logger.error(f"Failed to revert VM {vm_mapping.vmid} to snapshot {snapshot_name}: {e}")

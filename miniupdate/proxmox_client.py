@@ -206,6 +206,25 @@ class ProxmoxClient:
         logger.error(f"Task {upid} timed out after {timeout} seconds")
         return False
     
+    def start_vm(self, node: str, vmid: int, timeout: int = 30) -> bool:
+        """Start/power on VM."""
+        path = f"/nodes/{node}/qemu/{vmid}/status/start"
+        
+        try:
+            logger.info(f"Starting VM {vmid} on node {node}")
+            response = self._api_request('POST', path)
+            
+            # If response contains UPID (task ID), wait for it to complete
+            if 'data' in response and isinstance(response['data'], str):
+                upid = response['data']
+                return self.wait_for_task(node, upid, timeout)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start VM {vmid}: {e}")
+            return False
+    
     def reboot_vm(self, node: str, vmid: int, timeout: int = 30) -> bool:
         """Reboot VM."""
         path = f"/nodes/{node}/qemu/{vmid}/status/reboot"
