@@ -74,7 +74,7 @@ class Config:
     
     @property
     def inventory_path(self) -> str:
-        """Get Ansible inventory path."""
+        """Get Ansible inventory path with environment variable expansion."""
         if 'inventory' not in self.config:
             raise ValueError("No [inventory] section found in configuration")
         
@@ -82,7 +82,22 @@ class Config:
         if 'path' not in inventory_config:
             raise ValueError("Missing required inventory path")
         
-        return inventory_config['path']
+        raw_path = inventory_config['path']
+        
+        # Expand environment variables
+        expanded_path = os.path.expandvars(raw_path)
+        
+        # Expand user home directory (~)
+        expanded_path = os.path.expanduser(expanded_path)
+        
+        # Convert to absolute path if it's relative (unless it's already absolute)
+        path_obj = Path(expanded_path)
+        if not path_obj.is_absolute():
+            # Make relative to the config file directory if config is not in current dir
+            if self.config_path.parent != Path.cwd():
+                path_obj = self.config_path.parent / path_obj
+        
+        return str(path_obj)
     
     @property
     def ssh_config(self) -> Dict[str, Any]:
@@ -107,7 +122,22 @@ def create_example_config(path: str = "config.toml.example") -> None:
             "to_email": ["sysadmin@example.com", "admin@example.com"]
         },
         "inventory": {
+            # Local inventory file (relative to config file)
             "path": "inventory.yml",
+            
+            # Alternative examples (uncomment one):
+            # Absolute path
+            # "path": "/etc/ansible/inventory.yml",
+            
+            # Path using environment variable
+            # "path": "$ANSIBLE_INVENTORY_PATH/inventory.yml",
+            
+            # Path to external git repository
+            # "path": "~/git/infrastructure/ansible/inventory.yml",
+            
+            # Corporate shared inventory
+            # "path": "/shared/ansible-configs/production/inventory.yml",
+            
             "format": "ansible"
         },
         "ssh": {
