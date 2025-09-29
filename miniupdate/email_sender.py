@@ -316,10 +316,17 @@ Hosts with Errors: {len(hosts_with_errors)}
     def _send_email(self, msg: MIMEMultipart, to_emails: List[str]) -> bool:
         """Send the email message via SMTP."""
         try:
+            # Validate email configuration for strict SMTP servers like maddy
+            from_email = self.smtp_config['from_email']
+            if not from_email or '@' not in from_email:
+                logger.error(f"Invalid from_email format: {from_email}")
+                logger.debug("from_email must be a valid email address for SMTP compliance")
+                return False
+            
             logger.debug(f"Initiating SMTP connection to {self.smtp_config['smtp_server']}:{self.smtp_config['smtp_port']}")
             logger.debug(f"TLS enabled: {self.smtp_config.get('use_tls', True)}")
             logger.debug(f"Recipients: {', '.join(to_emails)}")
-            logger.debug(f"From: {self.smtp_config['from_email']}")
+            logger.debug(f"From: {from_email}")
             
             # Create SMTP connection
             if self.smtp_config.get('use_tls', True):
@@ -356,6 +363,9 @@ Hosts with Errors: {len(hosts_with_errors)}
             # This is required by RFC 5321 and strict SMTP servers like maddy
             text = msg.as_string(policy=SMTP)
             logger.debug(f"Email message size: {len(text)} bytes")
+            # Log first few lines of message for debugging (without sensitive content)
+            first_lines = '\n'.join(text.split('\n')[:5])
+            logger.debug(f"Message headers: {repr(first_lines[:200])}")
             server.sendmail(self.smtp_config['from_email'], to_emails, text)
             server.quit()
             logger.debug("SMTP connection closed")
@@ -377,6 +387,15 @@ Hosts with Errors: {len(hosts_with_errors)}
             return False
         except smtplib.SMTPDataError as e:
             logger.error(f"SMTP data error: {e}")
+            logger.debug(f"This may indicate message format issues or server rejection")
+            return False
+        except smtplib.SMTPServerDisconnected as e:
+            logger.error(f"SMTP server disconnected unexpectedly: {e}")
+            logger.debug(f"This may indicate server-side connection issues or policy violations")
+            return False
+        except ConnectionResetError as e:
+            logger.error(f"Connection reset by SMTP server: {e}")
+            logger.debug(f"Server may have rejected the connection due to policy violations")
             return False
         except Exception as e:
             logger.error(f"Failed to send email via SMTP: {e}")
