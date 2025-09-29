@@ -8,6 +8,7 @@ A Python tool that SSHs to an inventory of hosts (Ansible format), identifies th
 
 - **Multi-OS Support**: Automatically detects OS and uses appropriate package manager
   - Ubuntu/Debian (apt)
+  - Linux Mint (apt)
   - CentOS/RHEL (yum/dnf) 
   - Fedora (dnf)
   - openSUSE (zypper)

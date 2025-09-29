@@ -51,6 +51,8 @@ class OSDetector:
     OS_PATTERNS = {
         'ubuntu': ('linux', 'apt'),
         'debian': ('linux', 'apt'),
+        'linuxmint': ('linux', 'apt'),
+        'mint': ('linux', 'apt'),
         'centos': ('linux', 'yum'),
         'rhel': ('linux', 'yum'),
         'red hat': ('linux', 'yum'),
@@ -215,6 +217,8 @@ class OSDetector:
             return 'centos'
         elif 'ubuntu' in distribution:
             return 'ubuntu'
+        elif 'linuxmint' in distribution or 'linux mint' in distribution or distribution == 'mint':
+            return 'linuxmint'
         elif 'debian' in distribution:
             return 'debian'
         elif 'fedora' in distribution:
