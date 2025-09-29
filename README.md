@@ -8,6 +8,7 @@ A Python tool that SSHs to an inventory of hosts (Ansible format), identifies th
 
 - **Multi-OS Support**: Automatically detects OS and uses appropriate package manager
   - Ubuntu/Debian (apt)
+  - Linux Mint (apt)
   - CentOS/RHEL (yum/dnf) 
   - Fedora (dnf)
   - openSUSE (zypper)
@@ -15,6 +16,17 @@ A Python tool that SSHs to an inventory of hosts (Ansible format), identifies th
   - Alpine Linux (apk)
   - FreeBSD (pkg)
   - macOS (brew)
+
+- **Proxmox VE Integration**: VM snapshot management for safe automated updates
+  - Pre-update VM snapshots via Proxmox API
+  - Automatic rollback on update failures
+  - Configurable snapshot retention and cleanup
+
+- **Automated Update Workflow**: Complete hands-off update process
+  - System package updates with automatic reboot
+  - Host availability verification after reboot
+  - Intelligent rollback to snapshots on failures
+  - Priority-based email alerts for critical issues
 
 - **Ansible Integration**: Reads standard Ansible inventory files (YAML or INI format)
 - **Security Focus**: Identifies and highlights security updates
@@ -108,6 +120,45 @@ port = 22
 parallel_connections = 5
 log_level = "INFO"
 check_timeout = 120
+
+[proxmox]
+endpoint = "https://pve.example.com:8006"
+username = "root@pam"
+password = "your-proxmox-password"
+verify_ssl = true
+timeout = 30
+vm_mapping_file = "vm_mapping.toml"
+
+[updates]
+apply_updates = true
+reboot_after_updates = true
+reboot_timeout = 300         # Time to wait for reboot command (5 minutes)
+ping_timeout = 120          # Time to wait for host availability (2 minutes)
+ping_interval = 5           # Check every 5 seconds
+snapshot_name_prefix = "pre-update"
+cleanup_snapshots = true
+snapshot_retention_days = 7
+```
+
+### vm_mapping.toml
+
+Maps Ansible inventory host names to Proxmox VM IDs and nodes:
+
+```toml
+# VM Mapping Configuration for miniupdate
+# Maps Ansible inventory host names to Proxmox VM IDs and nodes
+
+[vms.web1]
+node = "pve-node1"
+vmid = 100
+
+[vms.web2] 
+node = "pve-node1"
+vmid = 101
+
+[vms.db1]
+node = "pve-node2"
+vmid = 200
 ```
 
 ### inventory.yml (Ansible Format)
@@ -197,8 +248,9 @@ path = "$HOME/git/infrastructure/${ENVIRONMENT}/inventory.yml"
 
 ### Commands
 
-- `init` - Create example configuration and inventory files
-- `check` - Check for updates on all hosts and send email report
+- `init` - Create example configuration, inventory, and VM mapping files
+- `check` - Check for updates on all hosts and send email report (read-only)
+- `update` - Apply updates with Proxmox snapshot integration (automated updates)
 - `test-config` - Test configuration file and connectivity
 
 ### Options
@@ -207,7 +259,7 @@ path = "$HOME/git/infrastructure/${ENVIRONMENT}/inventory.yml"
 - `-v, --verbose` - Enable verbose logging
 - `-p, --parallel` - Number of parallel connections (default: 5)
 - `-t, --timeout` - SSH timeout in seconds (default: 120)
-- `--dry-run` - Show what would be done without sending email
+- `--dry-run` - Show what would be done without applying changes
 
 ### Examples
 
@@ -218,11 +270,17 @@ python -m miniupdate.main -c /etc/miniupdate/config.toml check
 # Run with verbose logging and custom parallelism
 python -m miniupdate.main -v check -p 10
 
-# Test run without sending email
+# Test run without sending email or applying updates
 python -m miniupdate.main check --dry-run
 
+# Apply automated updates with snapshots
+python -m miniupdate.main update
+
+# Test automated update workflow without applying changes
+python -m miniupdate.main update --dry-run
+
 # Extended timeout for slow connections
-python -m miniupdate.main check -t 300
+python -m miniupdate.main update -t 300
 ```
 
 ## SSH Authentication
@@ -234,6 +292,38 @@ miniupdate supports multiple SSH authentication methods:
 3. **Username/Password** (less secure, not recommended)
 
 For best security, use SSH agent or key-based authentication.
+
+## Automated Update Workflow
+
+The `update` command provides a complete automated update workflow with Proxmox integration:
+
+### Update Process
+1. **Pre-flight checks**: Connects to hosts, detects OS, checks for available updates
+2. **Snapshot creation**: Creates VM snapshots via Proxmox API (if configured)
+3. **Update application**: Applies all available system updates
+4. **Reboot**: Automatically reboots the system if configured
+5. **Availability verification**: Waits for host to come back online with ping/SSH checks
+6. **Cleanup or rollback**: Either cleans up old snapshots or reverts on failure
+
+### Safety Features
+- **Snapshot rollback**: Automatically reverts VMs to pre-update state on any failure
+- **Availability monitoring**: Verifies hosts come back online after reboot
+- **Parallel processing**: Updates multiple hosts simultaneously with configurable limits
+- **Comprehensive logging**: Detailed logs of all operations and timings
+- **Priority email alerts**: 🚨 URGENT notifications for critical failures
+
+### Email Notifications
+- **Success**: ✅ Lists successfully applied updates
+- **Warnings**: ⚠️ Reports hosts that were reverted to snapshots  
+- **Critical**: 🚨 URGENT alerts when snapshot revert fails (requires immediate attention)
+
+### Configuration Options
+- `apply_updates`: Enable/disable actual update application (vs. check-only)
+- `reboot_after_updates`: Automatically reboot after applying updates
+- `ping_timeout`: How long to wait for host availability (default: 2 minutes)
+- `snapshot_name_prefix`: Prefix for automated snapshots
+- `cleanup_snapshots`: Remove old snapshots after successful updates
+- `snapshot_retention_days`: Keep snapshots for N days
 
 ## Email Reports
 
