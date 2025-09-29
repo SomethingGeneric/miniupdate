@@ -55,6 +55,11 @@ class PackageManager(ABC):
     def refresh_cache(self) -> bool:
         """Refresh package cache/metadata."""
         pass
+    
+    @abstractmethod
+    def apply_updates(self) -> bool:
+        """Apply all available updates."""
+        pass
 
 
 class AptPackageManager(PackageManager):
@@ -130,6 +135,31 @@ class AptPackageManager(PackageManager):
         for update in updates:
             if any(sec_repo in update.repository for sec_repo in security_repos):
                 update.security = True
+    
+    def apply_updates(self) -> bool:
+        """Apply all available APT updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied APT updates")
+                return True
+            else:
+                logger.error(f"Failed to apply APT updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying APT updates: {e}")
+            return False
 
 
 class YumPackageManager(PackageManager):
@@ -230,6 +260,31 @@ class YumPackageManager(PackageManager):
         
         except Exception as e:
             logger.debug(f"Could not check YUM security updates: {e}")
+    
+    def apply_updates(self) -> bool:
+        """Apply all available YUM updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'yum update -y', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied YUM updates")
+                return True
+            else:
+                logger.error(f"Failed to apply YUM updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying YUM updates: {e}")
+            return False
 
 
 class DnfPackageManager(PackageManager):
@@ -301,6 +356,31 @@ class DnfPackageManager(PackageManager):
         
         except Exception as e:
             logger.debug(f"Could not check DNF security updates: {e}")
+    
+    def apply_updates(self) -> bool:
+        """Apply all available DNF updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'dnf update -y', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied DNF updates")
+                return True
+            else:
+                logger.error(f"Failed to apply DNF updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying DNF updates: {e}")
+            return False
 
 
 class ZypperPackageManager(PackageManager):
@@ -359,6 +439,31 @@ class ZypperPackageManager(PackageManager):
                     updates.append(update)
         
         return updates
+    
+    def apply_updates(self) -> bool:
+        """Apply all available Zypper updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'zypper --non-interactive update', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied Zypper updates")
+                return True
+            else:
+                logger.error(f"Failed to apply Zypper updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying Zypper updates: {e}")
+            return False
 
 
 class PackmanPackageManager(PackageManager):
@@ -424,6 +529,138 @@ class PackmanPackageManager(PackageManager):
                     updates.append(update)
         
         return updates
+    
+    def apply_updates(self) -> bool:
+        """Apply all available Pacman updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'pacman -Su --noconfirm', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied Pacman updates")
+                return True
+            else:
+                logger.error(f"Failed to apply Pacman updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying Pacman updates: {e}")
+            return False
+
+
+class PkgPackageManager(PackageManager):
+    """Package manager for FreeBSD pkg."""
+    
+    def refresh_cache(self) -> bool:
+        """Refresh pkg cache."""
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'pkg update', timeout=300
+            )
+            return exit_code == 0
+        except Exception as e:
+            logger.error(f"Failed to refresh pkg cache: {e}")
+            return False
+    
+    def check_updates(self) -> List[PackageUpdate]:
+        """Check for pkg package updates."""
+        updates = []
+        
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'pkg version -vL=', timeout=120
+            )
+            
+            if exit_code != 0:
+                logger.warning(f"pkg version command failed: {stderr}")
+                return updates
+            
+            updates = self._parse_pkg_output(stdout)
+            # FreeBSD pkg doesn't have built-in security update marking like apt
+            # Would need to check against security advisories separately
+            
+        except Exception as e:
+            logger.error(f"Failed to check pkg updates: {e}")
+        
+        return updates
+    
+    def _parse_pkg_output(self, output: str) -> List[PackageUpdate]:
+        """Parse pkg version -vL= output."""
+        updates = []
+        
+        for line in output.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Format: package-version < needs updating (port has version)
+            if '<' in line and 'needs updating' in line:
+                # Extract package name and versions
+                parts = line.split('<')
+                if len(parts) >= 2:
+                    left_part = parts[0].strip()
+                    right_part = parts[1].strip()
+                    
+                    # Parse package-version
+                    if '-' in left_part:
+                        # Split on last dash to separate package name from version
+                        last_dash = left_part.rfind('-')
+                        package_name = left_part[:last_dash]
+                        current_version = left_part[last_dash + 1:]
+                    else:
+                        package_name = left_part
+                        current_version = "unknown"
+                    
+                    # Extract available version from right part
+                    # Format: "needs updating (port has 1.2.3)"
+                    match = re.search(r'port has ([^)]+)', right_part)
+                    if match:
+                        available_version = match.group(1)
+                    else:
+                        available_version = "unknown"
+                    
+                    update = PackageUpdate(
+                        name=package_name,
+                        current_version=current_version,
+                        available_version=available_version,
+                        repository="ports"
+                    )
+                    updates.append(update)
+        
+        return updates
+    
+    def apply_updates(self) -> bool:
+        """Apply all available pkg updates."""
+        try:
+            # Update package cache first
+            if not self.refresh_cache():
+                logger.error("Failed to refresh package cache before applying updates")
+                return False
+            
+            # Apply updates non-interactively
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'pkg upgrade -y', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied pkg updates")
+                return True
+            else:
+                logger.error(f"Failed to apply pkg updates: {stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error applying pkg updates: {e}")
+            return False
 
 
 def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[PackageManager]:
@@ -434,6 +671,7 @@ def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[
         'dnf': DnfPackageManager,
         'zypper': ZypperPackageManager,
         'pacman': PackmanPackageManager,
+        'pkg': PkgPackageManager,
     }
     
     pm_class = manager_map.get(os_info.package_manager)
