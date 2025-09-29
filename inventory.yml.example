@@ -1,0 +1,20 @@
+all:
+  children:
+    databases:
+      hosts:
+        db1: {}
+    webservers:
+      hosts:
+        web1: {}
+        web2: {}
+  hosts:
+    db1:
+      ansible_host: 192.168.1.20
+      ansible_port: 2222
+      ansible_user: root
+    web1:
+      ansible_host: 192.168.1.10
+      ansible_user: ubuntu
+    web2:
+      ansible_host: 192.168.1.11
+      ansible_user: ubuntu

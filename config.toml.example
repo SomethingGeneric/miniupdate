@@ -1,0 +1,21 @@
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+use_tls = true
+username = "your-email@example.com"
+password = "your-app-password"
+from_email = "your-email@example.com"
+to_email = [ "sysadmin@example.com", "admin@example.com",]
+
+[inventory]
+path = "inventory.yml"
+format = "ansible"
+
+[ssh]
+timeout = 30
+port = 22
+
+[settings]
+parallel_connections = 5
+log_level = "INFO"
+check_timeout = 120
