@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def process_host(host, ssh_config, timeout=120):
+def process_host(host, ssh_config, config, timeout=120):
     """Process a single host - detect OS and check for updates."""
     logger.info(f"Processing host: {host.name}")
     
@@ -66,6 +66,13 @@ def process_host(host, ssh_config, timeout=120):
             # Check for updates
             logger.info(f"Checking for updates on {host.name}")
             updates = package_manager.check_updates()
+            
+            # Check if this host is in the opt-out list
+            opt_out_hosts = config.update_opt_out_hosts
+            is_opt_out_host = host.name in opt_out_hosts
+            
+            if is_opt_out_host:
+                logger.info(f"Host {host.name} is in opt-out list - check-only mode")
             
             logger.info(f"Found {len(updates)} updates on {host.name} "
                        f"({sum(1 for u in updates if u.security)} security)")
@@ -118,7 +125,7 @@ def check(ctx, parallel, timeout, dry_run):
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             # Submit all host processing tasks
             future_to_host = {
-                executor.submit(process_host, host, config.ssh_config, timeout): host
+                executor.submit(process_host, host, config.ssh_config, config, timeout): host
                 for host in hosts
             }
             
@@ -149,12 +156,16 @@ def check(ctx, parallel, timeout, dry_run):
         hosts_with_updates = sum(1 for r in reports if r.has_updates)
         hosts_with_security = sum(1 for r in reports if r.has_security_updates)
         hosts_with_errors = sum(1 for r in reports if r.error)
+        opt_out_hosts = config.update_opt_out_hosts
+        opt_out_with_updates = sum(1 for r in reports if r.host.name in opt_out_hosts and r.has_updates)
         
         logger.info(f"\nSUMMARY:")
         logger.info(f"Total hosts checked: {total_hosts}")
         logger.info(f"Hosts with updates: {hosts_with_updates}")
         logger.info(f"Hosts with security updates: {hosts_with_security}")
         logger.info(f"Hosts with errors: {hosts_with_errors}")
+        if opt_out_hosts:
+            logger.info(f"Opt-out hosts (check-only): {len(opt_out_hosts)} ({opt_out_with_updates} with updates)")
         
         # Send email report
         if not dry_run:
