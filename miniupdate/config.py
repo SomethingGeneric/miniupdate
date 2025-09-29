@@ -104,6 +104,20 @@ class Config:
         """Get SSH configuration."""
         return self.config.get('ssh', {})
     
+    @property
+    def proxmox_config(self) -> Dict[str, Any]:
+        """Get Proxmox configuration."""
+        if 'proxmox' not in self.config:
+            return {}
+        return self.config['proxmox']
+    
+    @property
+    def update_config(self) -> Dict[str, Any]:
+        """Get update automation configuration."""
+        if 'updates' not in self.config:
+            return {}
+        return self.config['updates']
+    
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by key."""
         return self.config.get(key, default)
@@ -150,6 +164,24 @@ def create_example_config(path: str = "config.toml.example") -> None:
             "parallel_connections": 5,
             "log_level": "INFO",
             "check_timeout": 120
+        },
+        "proxmox": {
+            "endpoint": "https://pve.example.com:8006",
+            "username": "root@pam",
+            "password": "your-proxmox-password",
+            "verify_ssl": True,
+            "timeout": 30,
+            "vm_mapping_file": "vm_mapping.toml"
+        },
+        "updates": {
+            "apply_updates": True,
+            "reboot_after_updates": True,
+            "reboot_timeout": 300,  # 5 minutes
+            "ping_timeout": 120,    # 2 minutes for ping check after reboot
+            "ping_interval": 5,     # Check every 5 seconds
+            "snapshot_name_prefix": "pre-update",
+            "cleanup_snapshots": True,
+            "snapshot_retention_days": 7
         }
     }
     
