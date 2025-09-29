@@ -11,6 +11,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from email.policy import SMTP
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -325,12 +326,18 @@ Hosts with Errors: {len(hosts_with_errors)}
                 logger.debug("Creating SMTP connection with TLS")
                 server = smtplib.SMTP(self.smtp_config['smtp_server'], 
                                     self.smtp_config['smtp_port'])
+                # Explicitly call EHLO before starting TLS for better compatibility
+                server.ehlo()
                 logger.debug("Starting TLS encryption")
                 server.starttls()
+                # EHLO again after TLS as required by RFC
+                server.ehlo()
             else:
                 logger.debug("Creating SMTP connection without TLS")
                 server = smtplib.SMTP(self.smtp_config['smtp_server'], 
                                     self.smtp_config['smtp_port'])
+                # Call EHLO for proper SMTP handshake
+                server.ehlo()
             
             logger.debug("SMTP connection established")
             
@@ -345,7 +352,9 @@ Hosts with Errors: {len(hosts_with_errors)}
             
             # Send email
             logger.debug("Sending email message...")
-            text = msg.as_string()
+            # Use SMTP policy to ensure proper CRLF line endings for SMTP compliance
+            # This is required by RFC 5321 and strict SMTP servers like maddy
+            text = msg.as_string(policy=SMTP)
             logger.debug(f"Email message size: {len(text)} bytes")
             server.sendmail(self.smtp_config['from_email'], to_emails, text)
             server.quit()
