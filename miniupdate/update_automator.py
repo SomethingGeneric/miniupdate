@@ -360,15 +360,20 @@ class UpdateAutomator:
             # Wait for rollback task to complete if UPID is returned
             if 'data' in response and isinstance(response['data'], str):
                 upid = response['data']
-                if self.proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
-                    logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
-                    return True
-                else:
+                if not self.proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
                     logger.error(f"Snapshot rollback task failed for VM {vm_mapping.vmid}")
                     return False
-            else:
-                logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
-                return True
+            
+            logger.warning(f"VM {vm_mapping.vmid} reverted to snapshot {snapshot_name}")
+            
+            # Ensure VM is powered on after rollback
+            logger.info(f"Ensuring VM {vm_mapping.vmid} is powered on after snapshot restore")
+            if not self.proxmox_client.start_vm(vm_mapping.node, vm_mapping.vmid, timeout=60):
+                logger.error(f"Failed to power on VM {vm_mapping.vmid} after snapshot restore")
+                return False
+            
+            logger.info(f"VM {vm_mapping.vmid} is now powered on after snapshot restore")
+            return True
                 
         except Exception as e:
             logger.error(f"Failed to revert VM {vm_mapping.vmid} to snapshot {snapshot_name}: {e}")
