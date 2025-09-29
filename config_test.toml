@@ -1,0 +1,40 @@
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+use_tls = true
+username = "your-email@example.com"
+password = "your-app-password"
+from_email = "your-email@example.com"
+to_email = [ "sysadmin@example.com", "admin@example.com",]
+
+[inventory]
+path = "inventory.yml"
+format = "ansible"
+
+[ssh]
+timeout = 30
+port = 22
+
+[settings]
+parallel_connections = 5
+log_level = "INFO"
+check_timeout = 120
+
+[proxmox]
+endpoint = "https://pve.example.com:8006"
+username = "root@pam"
+password = "your-proxmox-password"
+verify_ssl = true
+timeout = 30
+vm_mapping_file = "nonexistent_mapping.toml"
+
+[updates]
+apply_updates = true
+reboot_after_updates = true
+reboot_timeout = 300
+ping_timeout = 120
+ping_interval = 5
+snapshot_name_prefix = "pre-update"
+cleanup_snapshots = true
+snapshot_retention_days = 7
+opt_out_hosts = []
