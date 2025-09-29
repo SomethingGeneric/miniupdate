@@ -135,15 +135,25 @@ class ProxmoxClient:
         return self._api_request('GET', path)
     
     def create_snapshot(self, node: str, vmid: int, snapname: str, 
-                       description: str = "") -> Dict[str, Any]:
-        """Create VM snapshot."""
+                       description: str = "", include_ram: bool = False) -> Dict[str, Any]:
+        """Create VM snapshot.
+        
+        Args:
+            node: Proxmox node name
+            vmid: VM ID
+            snapname: Snapshot name
+            description: Snapshot description
+            include_ram: Whether to include RAM state in snapshot (default: False for faster, more reliable snapshots)
+        """
         path = f"/nodes/{node}/qemu/{vmid}/snapshot"
         data = {
             'snapname': snapname,
-            'description': description or f"Automatic snapshot before updates - {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            'description': description or f"Automatic snapshot before updates - {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            'vmstate': 1 if include_ram else 0  # 0 = exclude RAM state, 1 = include RAM state
         }
         
-        logger.info(f"Creating snapshot '{snapname}' for VM {vmid} on node {node}")
+        snapshot_type = "with RAM" if include_ram else "without RAM"
+        logger.info(f"Creating snapshot '{snapname}' ({snapshot_type}) for VM {vmid} on node {node}")
         return self._api_request('POST', path, data)
     
     def delete_snapshot(self, node: str, vmid: int, snapname: str) -> Dict[str, Any]:

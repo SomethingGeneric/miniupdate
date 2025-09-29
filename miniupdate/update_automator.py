@@ -251,13 +251,16 @@ class UpdateAutomator:
                 
                 logger.info(f"Successfully applied updates on {host.name}")
                 
-                # Reboot if configured
+                # Reboot if configured (only for hosts that actually received updates)
                 if self.update_config.get('reboot_after_updates', False):
+                    logger.info(f"Reboot after updates is enabled - proceeding with reboot for {host.name}")
                     reboot_result = self._handle_reboot_and_verification(
                         host, vm_mapping, snapshot_name, start_time
                     )
                     if reboot_result:
                         return reboot_result
+                else:
+                    logger.info(f"Reboot after updates is disabled - skipping reboot for {host.name}")
                 
                 # Clean up snapshot if successful and configured
                 if (snapshot_name and self.proxmox_client and vm_mapping and 
@@ -303,7 +306,8 @@ class UpdateAutomator:
                 vm_mapping.node,
                 vm_mapping.vmid,
                 snapshot_name,
-                f"Pre-update snapshot created by miniupdate at {start_time}"
+                f"Pre-update snapshot created by miniupdate at {start_time}",
+                include_ram=False  # Exclude RAM for faster, more reliable snapshots
             )
             
             # Wait for snapshot task to complete if UPID is returned
