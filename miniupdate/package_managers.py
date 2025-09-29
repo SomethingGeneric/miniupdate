@@ -71,7 +71,11 @@ class AptPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'apt-get update -qq', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh APT cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh APT cache: {e}")
             return False
@@ -171,7 +175,11 @@ class YumPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'yum clean all && yum makecache fast', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh YUM cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh YUM cache: {e}")
             return False
@@ -296,7 +304,11 @@ class DnfPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'dnf clean all && dnf makecache', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh DNF cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh DNF cache: {e}")
             return False
@@ -392,7 +404,11 @@ class ZypperPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'zypper --quiet refresh', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh Zypper cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh Zypper cache: {e}")
             return False
@@ -475,7 +491,11 @@ class PackmanPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'pacman -Sy', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh Pacman cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh Pacman cache: {e}")
             return False
@@ -565,7 +585,11 @@ class PkgPackageManager(PackageManager):
             exit_code, stdout, stderr = self.connection.execute_command(
                 'pkg update', timeout=300
             )
-            return exit_code == 0
+            if exit_code == 0:
+                return True
+            else:
+                logger.error(f"Failed to refresh pkg cache (exit code {exit_code}): {stderr.strip()}")
+                return False
         except Exception as e:
             logger.error(f"Failed to refresh pkg cache: {e}")
             return False
