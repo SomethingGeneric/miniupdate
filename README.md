@@ -70,6 +70,12 @@ pip install -e .
 
 ## Configuration
 
+miniupdate supports flexible configuration management with multiple config file locations:
+
+1. **Command line**: `python -m miniupdate.main -c /path/to/config.toml`
+2. **Current directory**: `./config.toml`
+3. **Global user config**: `~/.miniupdate/config.toml`
+
 ### config.toml
 
 ```toml
@@ -83,7 +89,15 @@ from_email = "your-email@example.com"
 to_email = ["sysadmin@example.com", "admin@example.com"]
 
 [inventory]
+# Local inventory file (relative to config file)
 path = "inventory.yml"
+
+# Alternative inventory path examples:
+# Absolute path: path = "/etc/ansible/inventory.yml"
+# Environment variable: path = "$ANSIBLE_INVENTORY_PATH/inventory.yml"
+# External git repo: path = "~/git/infrastructure/ansible/inventory.yml"
+# Corporate shared: path = "/shared/ansible-configs/production/inventory.yml"
+
 format = "ansible"
 
 [ssh]
@@ -119,6 +133,64 @@ all:
     databases:
       hosts:
         db1: {}
+```
+
+## Using External Git Repositories for Inventory
+
+miniupdate supports using Ansible inventory files from external git repositories, making it perfect for centralized infrastructure management:
+
+### Setup with External Git Repository
+
+1. **Clone your infrastructure repository:**
+   ```bash
+   git clone https://github.com/yourorg/infrastructure.git ~/git/infrastructure
+   ```
+
+2. **Create global config:**
+   ```bash
+   mkdir -p ~/.miniupdate
+   ```
+
+3. **Configure global config (`~/.miniupdate/config.toml`):**
+   ```toml
+   [email]
+   smtp_server = "smtp.company.com"
+   # ... your email settings
+
+   [inventory]
+   # Point to your external git repository
+   path = "~/git/infrastructure/ansible/inventory.yml"
+   format = "ansible"
+   ```
+
+4. **Update inventory automatically:**
+   ```bash
+   # Add to cron or CI/CD pipeline
+   cd ~/git/infrastructure && git pull
+   python -m miniupdate.main check
+   ```
+
+### Configuration Path Examples
+
+```toml
+[inventory]
+# Relative to config file
+path = "inventory.yml"
+
+# Absolute path
+path = "/etc/ansible/inventory.yml"
+
+# Using environment variables
+path = "$ANSIBLE_INVENTORY_PATH/production.yml"
+
+# External git repository
+path = "~/git/infrastructure/ansible/inventory.yml"
+
+# Corporate shared filesystem
+path = "/shared/ansible-configs/production/inventory.yml"
+
+# Multiple environment support via environment variable
+path = "$HOME/git/infrastructure/${ENVIRONMENT}/inventory.yml"
 ```
 
 ## Usage

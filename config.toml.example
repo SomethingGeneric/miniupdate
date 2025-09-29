@@ -8,7 +8,22 @@ from_email = "your-email@example.com"
 to_email = [ "sysadmin@example.com", "admin@example.com",]
 
 [inventory]
+# Local inventory file (relative to config file)
 path = "inventory.yml"
+
+# Alternative examples (uncomment one):
+# Absolute path
+# path = "/etc/ansible/inventory.yml"
+
+# Path using environment variable
+# path = "$ANSIBLE_INVENTORY_PATH/inventory.yml"
+
+# Path to external git repository
+# path = "~/git/infrastructure/ansible/inventory.yml"
+
+# Corporate shared inventory
+# path = "/shared/ansible-configs/production/inventory.yml"
+
 format = "ansible"
 
 [ssh]
