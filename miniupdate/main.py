@@ -7,16 +7,19 @@ Orchestrates the process of checking updates across hosts and sending email repo
 import click
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .config import Config, create_example_config
 from .inventory import InventoryParser, create_example_inventory
+from .vm_mapping import create_example_vm_mapping
 from .ssh_manager import SSHManager
 from .os_detector import OSDetector
 from .package_managers import get_package_manager
 from .email_sender import EmailSender, UpdateReport
+from .update_automator import UpdateAutomator, AutomatedUpdateReport, UpdateResult
 
 
 # Configure logging
@@ -174,9 +177,123 @@ def check(ctx, parallel, timeout, dry_run):
 
 
 @cli.command()
+@click.option('--parallel', '-p', default=5, help='Number of parallel connections')
+@click.option('--timeout', '-t', default=120, help='SSH timeout in seconds')
+@click.option('--dry-run', is_flag=True, help='Show what would be done without applying updates')
+@click.pass_context
+def update(ctx, parallel, timeout, dry_run):
+    """Apply updates with Proxmox snapshot integration."""
+    try:
+        # Load configuration
+        config = Config(ctx.obj.get('config_path'))
+        logger.info(f"Loaded configuration from {config.config_path}")
+        
+        # Parse inventory
+        inventory_parser = InventoryParser(config.inventory_path)
+        hosts = inventory_parser.parse()
+        logger.info(f"Loaded {len(hosts)} hosts from inventory")
+        
+        if not hosts:
+            logger.error("No hosts found in inventory")
+            return 1
+        
+        # Initialize update automator
+        automator = UpdateAutomator(config)
+        
+        if dry_run:
+            logger.info("DRY RUN MODE - No updates will be applied")
+            # For dry run, just check what updates are available
+            return check.callback(parallel, timeout, dry_run)
+        
+        # Process hosts in parallel for automated updates
+        logger.info(f"Processing {len(hosts)} hosts with automated updates using {parallel} parallel connections")
+        reports = []
+        
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            # Submit all host processing tasks
+            future_to_host = {
+                executor.submit(automator.process_host_automated_update, host, timeout): host
+                for host in hosts
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_host):
+                host = future_to_host[future]
+                try:
+                    report = future.result()
+                    reports.append(report)
+                    
+                    # Log summary for this host
+                    if report.result == UpdateResult.SUCCESS:
+                        if report.update_report.has_updates:
+                            logger.info(f"{host.name}: SUCCESS - Applied {len(report.update_report.updates)} updates")
+                        else:
+                            logger.info(f"{host.name}: SUCCESS - No updates needed")
+                    elif report.result == UpdateResult.REVERTED:
+                        logger.error(f"{host.name}: REVERTED - {report.error_details}")
+                    elif report.result == UpdateResult.REVERT_FAILED:
+                        logger.critical(f"{host.name}: REVERT FAILED - {report.error_details}")
+                    else:
+                        logger.error(f"{host.name}: {report.result.value.upper()} - {report.error_details}")
+                        
+                except Exception as e:
+                    logger.error(f"Host {host.name} processing failed: {e}")
+                    # Create error report
+                    error_report = AutomatedUpdateReport(
+                        host=host,
+                        vm_mapping=None,
+                        update_report=UpdateReport(host, None, [], error=str(e)),
+                        result=UpdateResult.FAILED_UPDATES,
+                        snapshot_name=None,
+                        error_details=str(e),
+                        start_time=datetime.now(),
+                        end_time=datetime.now()
+                    )
+                    reports.append(error_report)
+        
+        # Generate summary
+        total_hosts = len(reports)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        failed_updates = sum(1 for r in reports if r.result in [
+            UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
+            UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
+        ])
+        reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
+        critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
+        
+        logger.info(f"\nUPDATE SUMMARY:")
+        logger.info(f"Total hosts processed: {total_hosts}")
+        logger.info(f"Successfully updated: {successful_updates}")
+        logger.info(f"No updates needed: {no_updates_needed}")
+        logger.info(f"Failed updates: {failed_updates}")
+        logger.info(f"Reverted to snapshot: {reverted_hosts}")
+        if critical_failures > 0:
+            logger.critical(f"CRITICAL: Revert failures: {critical_failures}")
+        
+        # Send email report with update results
+        logger.info("Sending automated update email report...")
+        email_sender = EmailSender(config.smtp_config)
+        
+        if email_sender.send_automated_update_report(reports):
+            logger.info("Automated update email report sent successfully")
+        else:
+            logger.error("Failed to send automated update email report")
+            return 1
+        
+        # Return non-zero exit code if there were any critical failures
+        return 1 if critical_failures > 0 else 0
+        
+    except Exception as e:
+        logger.error(f"Application error: {e}")
+        return 1
+
+
+@cli.command()
 @click.option('--config-file', default='config.toml.example', help='Example config file name')
 @click.option('--inventory-file', default='inventory.yml.example', help='Example inventory file name')
-def init(config_file, inventory_file):
+@click.option('--vm-mapping-file', default='vm_mapping.toml.example', help='Example VM mapping file name')
+def init(config_file, inventory_file, vm_mapping_file):
     """Create example configuration and inventory files."""
     try:
         # Create example config
@@ -201,11 +318,24 @@ def init(config_file, inventory_file):
             create_example_inventory(inventory_file)
             logger.info(f"Created example inventory: {inventory_file}")
         
+        # Create example VM mapping
+        if Path(vm_mapping_file).exists():
+            if not click.confirm(f"{vm_mapping_file} already exists. Overwrite?"):
+                logger.info(f"Skipped creating {vm_mapping_file}")
+            else:
+                create_example_vm_mapping(vm_mapping_file)
+                logger.info(f"Created example VM mapping: {vm_mapping_file}")
+        else:
+            create_example_vm_mapping(vm_mapping_file)
+            logger.info(f"Created example VM mapping: {vm_mapping_file}")
+        
         logger.info("\nNext steps:")
         logger.info(f"1. Copy {config_file} to config.toml and edit with your settings")
         logger.info(f"2. Copy {inventory_file} to inventory.yml and add your hosts")
-        logger.info("3. Run 'miniupdate check --dry-run' to test")
-        logger.info("4. Run 'miniupdate check' to check updates and send email")
+        logger.info(f"3. Copy {vm_mapping_file} to vm_mapping.toml and map hosts to VMs")
+        logger.info("4. Run 'miniupdate check --dry-run' to test checking updates")
+        logger.info("5. Run 'miniupdate update --dry-run' to test automated updates")
+        logger.info("6. Run 'miniupdate update' to apply automated updates with snapshots")
         
     except Exception as e:
         logger.error(f"Failed to create example files: {e}")

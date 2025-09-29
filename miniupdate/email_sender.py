@@ -78,7 +78,7 @@ class EmailSender:
             text_body = self._generate_text_body(reports)
             
             # Save HTML report to reports/ directory with datestamp
-            self._save_html_report(html_body)
+            self._save_html_report(html_body, "check")
             
             # Create message
             msg = MIMEMultipart('alternative')
@@ -292,7 +292,7 @@ Hosts with Errors: {len(hosts_with_errors)}
         
         return text
     
-    def _save_html_report(self, html_body: str) -> None:
+    def _save_html_report(self, html_body: str, report_type: str = "check") -> None:
         """Save HTML report to reports/ directory with datestamp."""
         try:
             # Create reports directory if it doesn't exist
@@ -301,7 +301,7 @@ Hosts with Errors: {len(hosts_with_errors)}
             
             # Generate filename with datestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"miniupdate_report_{timestamp}.html"
+            filename = f"{report_type}_report_{timestamp}.html"
             filepath = reports_dir / filename
             
             # Write HTML report to file
@@ -401,3 +401,403 @@ Hosts with Errors: {len(hosts_with_errors)}
             logger.error(f"Failed to send email via SMTP: {e}")
             logger.debug(f"Error type: {type(e).__name__}")
             return False
+    
+    def send_automated_update_report(self, reports) -> bool:
+        """
+        Send automated update report email.
+        
+        Args:
+            reports: List of AutomatedUpdateReport objects
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            # Import here to avoid circular imports
+            from .update_automator import UpdateResult
+            
+            # Generate email content
+            subject = self._generate_automated_subject(reports)
+            html_body = self._generate_automated_html_body(reports)
+            text_body = self._generate_automated_text_body(reports)
+            
+            # Save HTML report to reports/ directory with datestamp
+            self._save_html_report(html_body, "automated_update")
+            
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = self.smtp_config['from_email']
+            
+            # Handle multiple recipients
+            to_emails = self.smtp_config['to_email']
+            if isinstance(to_emails, str):
+                to_emails = [to_emails]
+            msg['To'] = ', '.join(to_emails)
+            
+            # Attach text and HTML versions
+            text_part = MIMEText(text_body, 'plain', 'utf-8')
+            html_part = MIMEText(html_body, 'html', 'utf-8')
+            msg.attach(text_part)
+            msg.attach(html_part)
+            
+            # Send email
+            return self._send_email(msg, to_emails)
+            
+        except Exception as e:
+            logger.error(f"Failed to generate automated update email: {e}")
+            return False
+    
+    def _generate_automated_subject(self, reports) -> str:
+        """Generate email subject for automated updates."""
+        from .update_automator import UpdateResult
+        
+        total = len(reports)
+        successful = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        no_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        critical = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
+        reverted = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
+        failed = total - successful - no_updates - critical - reverted
+        
+        if critical > 0:
+            return f"🚨 URGENT: {critical} host(s) failed update+revert, {failed} other failures - miniupdate"
+        elif failed > 0 or reverted > 0:
+            return f"⚠️ Update Issues: {failed} failed, {reverted} reverted, {successful} success - miniupdate"
+        elif successful > 0:
+            return f"✅ Updates Applied: {successful} updated, {no_updates} up-to-date - miniupdate"
+        else:
+            return f"📋 No Updates Needed: {no_updates} hosts checked - miniupdate"
+    
+    def _generate_automated_html_body(self, reports) -> str:
+        """Generate HTML email body for automated updates."""
+        from .update_automator import UpdateResult
+        
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; }
+                .summary { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #007bff; }
+                .host { margin: 15px 0; padding: 15px; border-radius: 5px; border-left: 4px solid #28a745; }
+                .host.critical { border-left-color: #dc3545; background-color: #fff5f5; }
+                .host.reverted { border-left-color: #ffc107; background-color: #fffbf0; }
+                .host.failed { border-left-color: #fd7e14; background-color: #fff8f0; }
+                .host.success { border-left-color: #28a745; background-color: #f8fff8; }
+                .host.no-updates { border-left-color: #6c757d; background-color: #f8f9fa; }
+                .host-name { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+                .host-details { color: #666; font-size: 14px; margin-bottom: 10px; }
+                .status { font-weight: bold; padding: 4px 8px; border-radius: 3px; display: inline-block; }
+                .status.success { background-color: #d4edda; color: #155724; }
+                .status.critical { background-color: #f8d7da; color: #721c24; }
+                .status.reverted { background-color: #fff3cd; color: #856404; }
+                .status.failed { background-color: #fdecea; color: #b52d3a; }
+                .updates-list { margin-top: 10px; }
+                .update-item { background-color: #e9ecef; padding: 5px 8px; margin: 2px 0; border-radius: 3px; }
+                .security-update { background-color: #f8d7da; color: #721c24; font-weight: bold; }
+                .error-details { background-color: #f8d7da; color: #721c24; padding: 8px; border-radius: 3px; margin-top: 5px; }
+                .timing { color: #666; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+        """
+        
+        html += self._generate_automated_header_html()
+        html += self._generate_automated_summary_html(reports)
+        
+        # Group hosts by result type for better organization
+        critical_hosts = [r for r in reports if r.result == UpdateResult.REVERT_FAILED]
+        reverted_hosts = [r for r in reports if r.result == UpdateResult.REVERTED]
+        failed_hosts = [r for r in reports if r.result in [
+            UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
+            UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
+        ]]
+        successful_hosts = [r for r in reports if r.result == UpdateResult.SUCCESS]
+        
+        # Show critical failures first
+        if critical_hosts:
+            html += '<h2 style="color: #dc3545;">🚨 CRITICAL FAILURES (Revert Failed)</h2>'
+            for report in critical_hosts:
+                html += self._generate_automated_host_html(report)
+        
+        # Then reverted hosts
+        if reverted_hosts:
+            html += '<h2 style="color: #ffc107;">⚠️ Reverted Hosts</h2>'
+            for report in reverted_hosts:
+                html += self._generate_automated_host_html(report)
+        
+        # Then other failures
+        if failed_hosts:
+            html += '<h2 style="color: #fd7e14;">❌ Failed Updates</h2>'
+            for report in failed_hosts:
+                html += self._generate_automated_host_html(report)
+        
+        # Finally successful hosts
+        if successful_hosts:
+            html += '<h2 style="color: #28a745;">✅ Successful Operations</h2>'
+            for report in successful_hosts:
+                html += self._generate_automated_host_html(report)
+        
+        html += """
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html
+    
+    def _generate_automated_header_html(self) -> str:
+        """Generate header HTML for automated updates."""
+        return f"""
+            <div class="header">
+                <h1>🤖 Automated System Updates Report</h1>
+                <p>Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </div>
+        """
+    
+    def _generate_automated_summary_html(self, reports) -> str:
+        """Generate summary HTML for automated updates."""
+        from .update_automator import UpdateResult
+        
+        total = len(reports)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
+        reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
+        other_failures = total - successful_updates - no_updates_needed - critical_failures - reverted_hosts
+        
+        total_updates_applied = sum(len(r.update_report.updates) for r in reports 
+                                  if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        total_security_updates = sum(len(r.update_report.security_updates) for r in reports 
+                                   if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        
+        html = f"""
+        <div class="summary">
+            <h2>📊 Summary</h2>
+            <ul>
+                <li><strong>Total hosts processed:</strong> {total}</li>
+                <li><strong>✅ Successfully updated:</strong> {successful_updates}</li>
+                <li><strong>📋 No updates needed:</strong> {no_updates_needed}</li>
+                <li><strong>🔄 Reverted to snapshot:</strong> {reverted_hosts}</li>
+                <li><strong>❌ Other failures:</strong> {other_failures}</li>
+        """
+        
+        if critical_failures > 0:
+            html += f'<li><strong style="color: #dc3545;">🚨 CRITICAL: Revert failures:</strong> {critical_failures}</li>'
+        
+        if successful_updates > 0:
+            html += f"""
+                <li><strong>Total updates applied:</strong> {total_updates_applied}</li>
+                <li><strong>Security updates applied:</strong> {total_security_updates}</li>
+            """
+        
+        html += """
+            </ul>
+        </div>
+        """
+        
+        return html
+    
+    def _generate_automated_host_html(self, report) -> str:
+        """Generate HTML for a single automated update report."""
+        from .update_automator import UpdateResult
+        
+        # Determine CSS class and status
+        if report.result == UpdateResult.REVERT_FAILED:
+            css_class = "host critical"
+            status_class = "status critical"
+            status_text = "CRITICAL: Revert Failed"
+        elif report.result == UpdateResult.REVERTED:
+            css_class = "host reverted"
+            status_class = "status reverted"
+            status_text = "Reverted to Snapshot"
+        elif report.result in [UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
+                             UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT]:
+            css_class = "host failed"
+            status_class = "status failed"
+            status_text = f"Failed: {report.result.value.replace('_', ' ').title()}"
+        elif report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+            css_class = "host success"
+            status_class = "status success"
+            status_text = "Successfully Updated"
+        else:
+            css_class = "host no-updates"
+            status_class = "status success"
+            status_text = "No Updates Needed"
+        
+        html = f'<div class="{css_class}">'
+        html += f'<div class="host-name">{report.host.name} ({report.host.hostname})</div>'
+        html += f'<div class="{status_class}">{status_text}</div>'
+        
+        # Add timing information
+        if report.end_time:
+            duration = (report.end_time - report.start_time).total_seconds()
+            html += f'<div class="timing">Duration: {int(duration)}s</div>'
+        
+        # Add OS info if available
+        if report.update_report.os_info:
+            html += f'<div class="host-details">{report.update_report.os_info}</div>'
+        
+        # Add VM mapping info if available
+        if report.vm_mapping:
+            html += f'<div class="host-details">VM: {report.vm_mapping.vmid} on {report.vm_mapping.node}'
+            if report.snapshot_name:
+                html += f' (Snapshot: {report.snapshot_name})'
+            html += '</div>'
+        
+        # Show updates if successful
+        if report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+            security_updates = report.update_report.security_updates
+            regular_updates = report.update_report.regular_updates
+            
+            if security_updates:
+                html += f'<div><strong>🔒 Security Updates ({len(security_updates)}):</strong></div>'
+                html += '<div class="updates-list">'
+                for update in security_updates:
+                    html += f'<div class="update-item security-update">{update}</div>'
+                html += '</div>'
+            
+            if regular_updates:
+                html += f'<div><strong>Regular Updates ({len(regular_updates)}):</strong></div>'
+                html += '<div class="updates-list">'
+                for update in regular_updates:
+                    html += f'<div class="update-item">{update}</div>'
+                html += '</div>'
+        
+        # Show error details if there are any
+        if report.error_details:
+            html += f'<div class="error-details"><strong>Error:</strong> {report.error_details}</div>'
+        elif report.update_report.error:
+            html += f'<div class="error-details"><strong>Error:</strong> {report.update_report.error}</div>'
+        
+        html += '</div>'
+        return html
+    
+    def _generate_automated_text_body(self, reports) -> str:
+        """Generate plain text email body for automated updates."""
+        from .update_automator import UpdateResult
+        
+        text = "🤖 AUTOMATED SYSTEM UPDATES REPORT\n"
+        text += "=" * 50 + "\n"
+        text += f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        # Summary
+        total = len(reports)
+        successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and r.update_report.has_updates)
+        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.SUCCESS and not r.update_report.has_updates)
+        critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
+        reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
+        other_failures = total - successful_updates - no_updates_needed - critical_failures - reverted_hosts
+        
+        text += "📊 SUMMARY\n"
+        text += "-" * 20 + "\n"
+        text += f"Total hosts processed: {total}\n"
+        text += f"✅ Successfully updated: {successful_updates}\n"
+        text += f"📋 No updates needed: {no_updates_needed}\n"
+        text += f"🔄 Reverted to snapshot: {reverted_hosts}\n"
+        text += f"❌ Other failures: {other_failures}\n"
+        
+        if critical_failures > 0:
+            text += f"🚨 CRITICAL: Revert failures: {critical_failures}\n"
+        
+        text += "\n"
+        
+        # Group and show hosts
+        critical_hosts = [r for r in reports if r.result == UpdateResult.REVERT_FAILED]
+        reverted_hosts = [r for r in reports if r.result == UpdateResult.REVERTED]
+        failed_hosts = [r for r in reports if r.result in [
+            UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
+            UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
+        ]]
+        successful_hosts = [r for r in reports if r.result == UpdateResult.SUCCESS]
+        
+        if critical_hosts:
+            text += "🚨 CRITICAL FAILURES (Revert Failed)\n"
+            text += "-" * 40 + "\n"
+            for report in critical_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        if reverted_hosts:
+            text += "⚠️ REVERTED HOSTS\n"
+            text += "-" * 20 + "\n"
+            for report in reverted_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        if failed_hosts:
+            text += "❌ FAILED UPDATES\n"
+            text += "-" * 20 + "\n"
+            for report in failed_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        if successful_hosts:
+            text += "✅ SUCCESSFUL OPERATIONS\n"
+            text += "-" * 25 + "\n"
+            for report in successful_hosts:
+                text += self._generate_automated_host_text(report)
+                text += "\n"
+        
+        return text
+    
+    def _generate_automated_host_text(self, report) -> str:
+        """Generate plain text for a single automated update report."""
+        from .update_automator import UpdateResult
+        
+        text = f"{report.host.name} ({report.host.hostname})\n"
+        
+        # Status
+        if report.result == UpdateResult.REVERT_FAILED:
+            text += "  Status: 🚨 CRITICAL - Revert Failed\n"
+        elif report.result == UpdateResult.REVERTED:
+            text += "  Status: 🔄 Reverted to Snapshot\n"
+        elif report.result in [UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
+                             UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT]:
+            text += f"  Status: ❌ Failed - {report.result.value.replace('_', ' ').title()}\n"
+        elif report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+            text += "  Status: ✅ Successfully Updated\n"
+        else:
+            text += "  Status: 📋 No Updates Needed\n"
+        
+        # Timing
+        if report.end_time:
+            duration = (report.end_time - report.start_time).total_seconds()
+            text += f"  Duration: {int(duration)}s\n"
+        
+        # OS info
+        if report.update_report.os_info:
+            text += f"  OS: {report.update_report.os_info}\n"
+        
+        # VM info
+        if report.vm_mapping:
+            text += f"  VM: {report.vm_mapping.vmid} on {report.vm_mapping.node}\n"
+            if report.snapshot_name:
+                text += f"  Snapshot: {report.snapshot_name}\n"
+        
+        # Updates
+        if report.result == UpdateResult.SUCCESS and report.update_report.has_updates:
+            security_updates = report.update_report.security_updates
+            regular_updates = report.update_report.regular_updates
+            
+            if security_updates:
+                text += f"  🔒 Security Updates ({len(security_updates)}):\n"
+                for update in security_updates:
+                    text += f"    - {update}\n"
+            
+            if regular_updates:
+                text += f"  Regular Updates ({len(regular_updates)}):\n"
+                for update in regular_updates:
+                    text += f"    - {update}\n"
+        
+        # Errors
+        if report.error_details:
+            text += f"  Error: {report.error_details}\n"
+        elif report.update_report.error:
+            text += f"  Error: {report.update_report.error}\n"
+        
+        return text
