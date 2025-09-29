@@ -88,6 +88,33 @@ miniupdate supports flexible configuration management with multiple config file 
 2. **Current directory**: `./config.toml`
 3. **Global user config**: `~/.miniupdate/config.toml`
 
+### Opt-Out Hosts Feature
+
+miniupdate supports excluding specific hosts from automatic updates while still checking for available updates. This is useful for critical infrastructure hosts like Proxmox hypervisors that require manual update procedures.
+
+#### Configuration
+
+Add hosts to the opt-out list in your `config.toml`:
+
+```toml
+[updates]
+apply_updates = true
+opt_out_hosts = ["pve-host1", "pve-host2", "critical-db-server"]
+```
+
+#### Behavior
+
+- **Check Command**: Opt-out hosts are checked for updates and included in reports, but marked as check-only
+- **Update Command**: Opt-out hosts are checked for updates but no snapshots, updates, or reboots are performed
+- **Email Reports**: Opt-out hosts appear in reports with their available updates listed
+- **Logging**: Clear indicators when processing opt-out hosts
+
+#### Use Cases
+
+- **Proxmox Hypervisors**: Check for updates but handle them manually through the Proxmox web interface
+- **Critical Servers**: Review updates before applying during maintenance windows
+- **Legacy Systems**: Monitor update availability without risking automated changes
+
 ### config.toml
 
 ```toml
@@ -138,6 +165,8 @@ ping_interval = 5           # Check every 5 seconds
 snapshot_name_prefix = "pre-update"
 cleanup_snapshots = true
 snapshot_retention_days = 7
+# List of hosts to exclude from automatic updates (check-only mode)
+opt_out_hosts = ["pve-host1", "pve-host2"]  # Hosts that will only be checked, not updated
 ```
 
 ### vm_mapping.toml

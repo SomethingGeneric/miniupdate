@@ -165,9 +165,16 @@ class UpdateAutomator:
                 updates = package_manager.check_updates()
                 update_report = UpdateReport(host, os_info, updates)
                 
-                # If no updates are configured to be applied, just return check results
-                if not self.update_config.get('apply_updates', False):
-                    logger.info(f"Update application disabled - only checking updates on {host.name}")
+                # Check if this host is in the opt-out list
+                opt_out_hosts = self.config.update_opt_out_hosts
+                is_opt_out_host = host.name in opt_out_hosts
+                
+                # If host is in opt-out list or update application is disabled, just return check results
+                if is_opt_out_host or not self.update_config.get('apply_updates', False):
+                    if is_opt_out_host:
+                        logger.info(f"Host {host.name} is in opt-out list - only checking updates")
+                    else:
+                        logger.info(f"Update application disabled - only checking updates on {host.name}")
                     return AutomatedUpdateReport(
                         host=host,
                         vm_mapping=vm_mapping,
