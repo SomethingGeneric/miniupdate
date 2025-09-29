@@ -161,9 +161,27 @@ class UpdateAutomator:
                 
                 # Refresh cache and check for updates
                 logger.info(f"Checking for updates on {host.name}")
-                if not package_manager.refresh_cache():
-                    logger.warning(f"Failed to refresh package cache on {host.name}")
-                
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    if package_manager.refresh_cache():
+                        break
+                    logger.warning(f"Failed to refresh package cache on {host.name} (attempt {attempt}/{max_retries})")
+                    if attempt < max_retries:
+                        import time
+                        time.sleep(5)
+                else:
+                    error_details = f"Failed to refresh package cache on {host.name} after {max_retries} attempts"
+                    logger.error(error_details)
+                    return AutomatedUpdateReport(
+                        host=host,
+                        vm_mapping=vm_mapping,
+                        update_report=UpdateReport(host, os_info, [], error=error_details),
+                        result=UpdateResult.FAILED_UPDATES,
+                        snapshot_name=None,
+                        error_details=error_details,
+                        start_time=start_time,
+                        end_time=datetime.now()
+                    )
                 updates = package_manager.check_updates()
                 update_report = UpdateReport(host, os_info, updates)
                 
