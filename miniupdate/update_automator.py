@@ -6,7 +6,9 @@ Handles the complete workflow: snapshot -> update -> reboot -> verify -> cleanup
 
 import logging
 import time
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Dict, Any, Optional, NamedTuple
 from enum import Enum
 
@@ -81,7 +83,7 @@ class UpdateAutomator:
                 
                 # Setup VM mapper
                 vm_mapping_file = self.proxmox_config.get('vm_mapping_file')
-                self.vm_mapper = VMMapper(vm_mapping_file)
+                self.vm_mapper = VMMapper(self._resolve_vm_mapping_path(vm_mapping_file))
                 
                 logger.info("Proxmox integration enabled")
             except Exception as e:
@@ -89,6 +91,34 @@ class UpdateAutomator:
                 self.proxmox_client = None
         else:
             logger.info("Proxmox integration disabled - no configuration provided")
+    
+    def _resolve_vm_mapping_path(self, vm_mapping_file: Optional[str]) -> Optional[str]:
+        """
+        Resolve VM mapping file path relative to config file directory.
+        
+        Args:
+            vm_mapping_file: VM mapping file path from config
+            
+        Returns:
+            Resolved absolute path or None if not provided
+        """
+        if not vm_mapping_file:
+            return None
+        
+        # Expand environment variables and user home directory
+        expanded_path = os.path.expandvars(vm_mapping_file)
+        expanded_path = os.path.expanduser(expanded_path)
+        
+        # Convert to Path object
+        path_obj = Path(expanded_path)
+        
+        # If it's not absolute, make it relative to the config file directory
+        if not path_obj.is_absolute():
+            # Make relative to the config file directory if config is not in current dir
+            if self.config.config_path.parent != Path.cwd():
+                path_obj = self.config.config_path.parent / path_obj
+        
+        return str(path_obj)
     
     def process_host_automated_update(self, host: Host, timeout: int = 120) -> AutomatedUpdateReport:
         """
