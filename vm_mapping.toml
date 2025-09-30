@@ -26,10 +26,6 @@ node="bingus"
 vmid=112
 node="bingus"
 
-[vms.searxng]
-vmid=114
-node="bingus"
-
 [vms.immich]
 vmid=119
 node="bingus"

@@ -1,4 +1,6 @@
 config.toml
+inventory.yml
+vm_mapping.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

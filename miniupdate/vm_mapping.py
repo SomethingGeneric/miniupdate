@@ -91,10 +91,15 @@ class VMMapper:
                 )
             
             logger.info(f"Loaded VM mappings for {len(mappings)} hosts")
+
+            #logger.info(f"All loaded mappings: \n{str(mappings)}")
+            #input("Press enter")
+            
             return mappings
             
         except Exception as e:
             logger.error(f"Failed to load VM mappings from {self.mapping_path}: {e}")
+            exit(1)
             return mappings
     
     def get_vm_info(self, host_name: str) -> Optional[VMMapping]:
