@@ -8,22 +8,7 @@ from_email = "your-email@example.com"
 to_email = [ "sysadmin@example.com", "admin@example.com",]
 
 [inventory]
-# Local inventory file (relative to config file)
 path = "inventory.yml"
-
-# Alternative examples (uncomment one):
-# Absolute path
-# path = "/etc/ansible/inventory.yml"
-
-# Path using environment variable
-# path = "$ANSIBLE_INVENTORY_PATH/inventory.yml"
-
-# Path to external git repository
-# path = "~/git/infrastructure/ansible/inventory.yml"
-
-# Corporate shared inventory
-# path = "/shared/ansible-configs/production/inventory.yml"
-
 format = "ansible"
 
 [ssh]
@@ -46,12 +31,10 @@ vm_mapping_file = "vm_mapping.toml"
 [updates]
 apply_updates = true
 reboot_after_updates = true
-reboot_timeout = 300         # Time to wait for reboot command (5 minutes)
-ping_timeout = 120          # Time to wait for host availability (2 minutes)
-ping_interval = 5           # Check every 5 seconds
+reboot_timeout = 300
+ping_timeout = 120
+ping_interval = 5
 snapshot_name_prefix = "pre-update"
 cleanup_snapshots = true
 snapshot_retention_days = 7
-# List of hosts to exclude from automatic updates (check-only mode for these hosts)
-# Example: opt_out_hosts = ["pve-host1", "pve-host2", "critical-server"]
 opt_out_hosts = []
