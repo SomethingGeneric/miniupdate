@@ -486,14 +486,14 @@ class UpdateAutomator:
         return None  # Success - no error report needed
     
     def _cleanup_old_snapshots(self, vm_mapping: VMMapping):
-        """Clean up old automated snapshots."""
+        """Clean up old automated snapshots based on retention policy or count limit."""
         try:
-            retention_days = self.update_config.get('snapshot_retention_days', 7)
             prefix = self.update_config.get('snapshot_name_prefix', 'pre-update')
             
             snapshots = self.proxmox_client.list_snapshots(vm_mapping.node, vm_mapping.vmid)
-            cutoff_time = datetime.now() - timedelta(days=retention_days)
             
+            # Filter to only automated snapshots with valid timestamps
+            automated_snapshots = []
             for snapshot in snapshots:
                 snap_name = snapshot.get('name', '')
                 if not snap_name.startswith(prefix):
@@ -503,14 +503,45 @@ class UpdateAutomator:
                 try:
                     timestamp_str = snap_name[len(prefix) + 1:]  # Remove prefix and dash
                     snap_time = datetime.strptime(timestamp_str, '%Y%m%d-%H%M%S')
-                    
-                    if snap_time < cutoff_time:
-                        logger.info(f"Deleting old snapshot {snap_name} for VM {vm_mapping.vmid}")
-                        self.proxmox_client.delete_snapshot(vm_mapping.node, vm_mapping.vmid, snap_name)
-                        
+                    automated_snapshots.append({
+                        'name': snap_name,
+                        'time': snap_time
+                    })
                 except (ValueError, IndexError) as e:
                     logger.debug(f"Could not parse snapshot timestamp for {snap_name}: {e}")
                     continue
+            
+            # Sort by timestamp, newest first
+            automated_snapshots.sort(key=lambda x: x['time'], reverse=True)
+            
+            snapshots_to_delete = []
+            
+            # Check per-host max_snapshots limit first (takes precedence)
+            if vm_mapping.max_snapshots is not None:
+                # Keep only the newest max_snapshots, delete the rest
+                if len(automated_snapshots) > vm_mapping.max_snapshots:
+                    snapshots_to_delete = automated_snapshots[vm_mapping.max_snapshots:]
+                    logger.info(f"Per-host snapshot quota: keeping {vm_mapping.max_snapshots} newest snapshots "
+                               f"for VM {vm_mapping.vmid}, deleting {len(snapshots_to_delete)} older ones")
+            else:
+                # Fall back to time-based retention policy
+                retention_days = self.update_config.get('snapshot_retention_days', 7)
+                cutoff_time = datetime.now() - timedelta(days=retention_days)
+                
+                snapshots_to_delete = [
+                    snap for snap in automated_snapshots 
+                    if snap['time'] < cutoff_time
+                ]
+                
+                if snapshots_to_delete:
+                    logger.info(f"Time-based retention: deleting {len(snapshots_to_delete)} snapshots "
+                               f"older than {retention_days} days for VM {vm_mapping.vmid}")
+            
+            # Delete the snapshots
+            for snap in snapshots_to_delete:
+                snap_name = snap['name']
+                logger.info(f"Deleting old snapshot {snap_name} for VM {vm_mapping.vmid}")
+                self.proxmox_client.delete_snapshot(vm_mapping.node, vm_mapping.vmid, snap_name)
                     
         except Exception as e:
             logger.warning(f"Failed to cleanup old snapshots for VM {vm_mapping.vmid}: {e}")
