@@ -18,6 +18,7 @@ class VMMapping(NamedTuple):
     node: str
     vmid: int
     host_name: str
+    max_snapshots: Optional[int] = None
 
 
 class VMMapper:
@@ -72,6 +73,7 @@ class VMMapper:
                 
                 node = vm_info.get('node')
                 vmid = vm_info.get('vmid')
+                max_snapshots = vm_info.get('max_snapshots')
                 
                 if not node or not vmid:
                     logger.warning(f"Incomplete VM mapping for {host_name}: "
@@ -84,10 +86,22 @@ class VMMapper:
                     logger.warning(f"Invalid vmid for {host_name}: {vmid}")
                     continue
                 
+                # Validate max_snapshots if provided
+                if max_snapshots is not None:
+                    try:
+                        max_snapshots = int(max_snapshots)
+                        if max_snapshots < 0:
+                            logger.warning(f"Invalid max_snapshots for {host_name}: must be >= 0")
+                            max_snapshots = None
+                    except ValueError:
+                        logger.warning(f"Invalid max_snapshots for {host_name}: {max_snapshots}")
+                        max_snapshots = None
+                
                 mappings[host_name] = VMMapping(
                     node=node,
                     vmid=vmid,
-                    host_name=host_name
+                    host_name=host_name,
+                    max_snapshots=max_snapshots
                 )
             
             logger.info(f"Loaded VM mappings for {len(mappings)} hosts")
@@ -126,7 +140,8 @@ def create_example_vm_mapping(path: str = "vm_mapping.toml.example") -> None:
             },
             "web2": {
                 "node": "pve-node1", 
-                "vmid": 101
+                "vmid": 101,
+                "max_snapshots": 2  # Optional: limit to 2 snapshots for capacity-limited storage
             },
             "db1": {
                 "node": "pve-node2",
@@ -138,6 +153,7 @@ def create_example_vm_mapping(path: str = "vm_mapping.toml.example") -> None:
     with open(path, 'w', encoding='utf-8') as f:
         # Write with comments
         f.write("# VM Mapping Configuration for miniupdate\n")
-        f.write("# Maps Ansible inventory host names to Proxmox VM IDs and nodes\n\n")
+        f.write("# Maps Ansible inventory host names to Proxmox VM IDs and nodes\n")
+        f.write("# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage\n\n")
         
         toml.dump(example_config, f)

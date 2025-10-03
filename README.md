@@ -176,6 +176,7 @@ Maps Ansible inventory host names to Proxmox VM IDs and nodes:
 ```toml
 # VM Mapping Configuration for miniupdate
 # Maps Ansible inventory host names to Proxmox VM IDs and nodes
+# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage
 
 [vms.web1]
 node = "pve-node1"
@@ -184,11 +185,20 @@ vmid = 100
 [vms.web2] 
 node = "pve-node1"
 vmid = 101
+# Optional: Limit to 2 snapshots for VMs on capacity-limited storage (e.g., small SSDs)
+max_snapshots = 2
 
 [vms.db1]
 node = "pve-node2"
 vmid = 200
 ```
+
+**Per-Host Snapshot Quota:**
+- Use `max_snapshots` to set a maximum number of automated snapshots per VM
+- When set, miniupdate will keep only the N newest snapshots and delete older ones
+- Useful for VMs on capacity-limited storage backends (e.g., small SSDs)
+- Takes precedence over the global `snapshot_retention_days` setting
+- If not set, the global time-based retention policy applies
 
 ### inventory.yml (Ansible Format)
 
