@@ -15,6 +15,7 @@ A Python tool that SSHs to an inventory of hosts (Ansible format), identifies th
   - Arch Linux (pacman)
   - Alpine Linux (apk)
   - FreeBSD (pkg)
+  - OpenBSD (pkg_add)
   - macOS (brew)
 
 - **Proxmox VE Integration**: VM snapshot management for safe automated updates

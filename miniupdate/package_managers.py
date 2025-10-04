@@ -716,6 +716,135 @@ class PkgPackageManager(PackageManager):
             return False, error_msg
 
 
+class PkgAddPackageManager(PackageManager):
+    """Package manager for OpenBSD pkg_add."""
+    
+    def refresh_cache(self) -> bool:
+        """Refresh pkg_add cache (not really needed for OpenBSD, but check connection)."""
+        # OpenBSD pkg_add doesn't have a cache refresh like other systems
+        # But we can verify the package database is accessible
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'pkg_info -Q ""', timeout=30
+            )
+            # Any exit code is fine here, we're just checking connection
+            return True
+        except Exception as e:
+            logger.error(f"Failed to check pkg_add availability: {e}")
+            return False
+    
+    def check_updates(self) -> List[PackageUpdate]:
+        """Check for pkg_add package updates."""
+        updates = []
+        
+        try:
+            # Use pkg_add -u with -n (dry-run) to see what would be updated
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'doas pkg_add -u -n', timeout=120
+            )
+            
+            if exit_code != 0:
+                logger.warning(f"pkg_add check command failed: {stderr}")
+                return updates
+            
+            updates = self._parse_pkg_add_output(stdout)
+            
+        except Exception as e:
+            logger.error(f"Failed to check pkg_add updates: {e}")
+        
+        return updates
+    
+    def _parse_pkg_add_output(self, output: str) -> List[PackageUpdate]:
+        """Parse pkg_add -u -n output."""
+        updates = []
+        
+        for line in output.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Format examples:
+            # "Update to package-1.2.3"
+            # "quirks-7.14 -> quirks-7.15"
+            if '->' in line:
+                # Format: package-old-version -> package-new-version
+                parts = line.split('->')
+                if len(parts) >= 2:
+                    left_part = parts[0].strip()
+                    right_part = parts[1].strip()
+                    
+                    # Extract package name and versions
+                    # OpenBSD format: packagename-version
+                    if '-' in left_part:
+                        last_dash = left_part.rfind('-')
+                        package_name = left_part[:last_dash]
+                        current_version = left_part[last_dash + 1:]
+                    else:
+                        package_name = left_part
+                        current_version = "unknown"
+                    
+                    if '-' in right_part:
+                        last_dash = right_part.rfind('-')
+                        available_version = right_part[last_dash + 1:]
+                    else:
+                        available_version = right_part
+                    
+                    update = PackageUpdate(
+                        name=package_name,
+                        current_version=current_version,
+                        available_version=available_version,
+                        repository="OpenBSD"
+                    )
+                    updates.append(update)
+            elif 'update to' in line.lower():
+                # Format: "Update to package-version"
+                match = re.search(r'update to ([^\s]+)', line, re.IGNORECASE)
+                if match:
+                    package_with_version = match.group(1)
+                    if '-' in package_with_version:
+                        last_dash = package_with_version.rfind('-')
+                        package_name = package_with_version[:last_dash]
+                        available_version = package_with_version[last_dash + 1:]
+                    else:
+                        package_name = package_with_version
+                        available_version = "unknown"
+                    
+                    update = PackageUpdate(
+                        name=package_name,
+                        current_version="installed",
+                        available_version=available_version,
+                        repository="OpenBSD"
+                    )
+                    updates.append(update)
+        
+        return updates
+    
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
+        """Apply all available pkg_add updates."""
+        try:
+            # OpenBSD uses doas instead of sudo by default
+            # Apply updates with -u (update) flag
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'doas pkg_add -u', 
+                timeout=1800  # 30 minutes for updates
+            )
+            
+            if exit_code == 0:
+                logger.info("Successfully applied pkg_add updates")
+                return True, None
+            else:
+                error_output = f"pkg_add update failed with exit code {exit_code}\n"
+                error_output += f"STDOUT:\n{stdout}\n" if stdout.strip() else ""
+                error_output += f"STDERR:\n{stderr}\n" if stderr.strip() else ""
+                logger.error(f"Failed to apply pkg_add updates: {stderr}")
+                return False, error_output
+                
+        except Exception as e:
+            error_msg = f"Error applying pkg_add updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
+
 def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[PackageManager]:
     """Get appropriate package manager instance for the OS."""
     manager_map = {
@@ -725,6 +854,7 @@ def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[
         'zypper': ZypperPackageManager,
         'pacman': PackmanPackageManager,
         'pkg': PkgPackageManager,
+        'pkg_add': PkgAddPackageManager,
     }
     
     pm_class = manager_map.get(os_info.package_manager)

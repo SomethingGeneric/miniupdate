@@ -44,6 +44,7 @@ class OSDetector:
         'pacman': ['/usr/bin/pacman'],
         'apk': ['/sbin/apk'],
         'pkg': ['/usr/sbin/pkg'],  # FreeBSD
+        'pkg_add': ['/usr/sbin/pkg_add'],  # OpenBSD
         'brew': ['/usr/local/bin/brew', '/opt/homebrew/bin/brew'],  # macOS
     }
     
@@ -63,6 +64,7 @@ class OSDetector:
         'manjaro': ('linux', 'pacman'),
         'alpine': ('linux', 'apk'),
         'freebsd': ('freebsd', 'pkg'),
+        'openbsd': ('openbsd', 'pkg_add'),
         'darwin': ('darwin', 'brew'),
         'macos': ('darwin', 'brew'),
     }
@@ -185,7 +187,7 @@ class OSDetector:
             if 'Release' in lsb_info:
                 version = lsb_info['Release']
         
-        # Fallback to uname for macOS/Darwin
+        # Fallback to uname for macOS/Darwin/BSD systems
         if distribution == 'unknown' and uname_info:
             kernel_name = uname_info.get('kernel_name', '').lower()
             if kernel_name == 'darwin':
@@ -193,6 +195,9 @@ class OSDetector:
                 version = uname_info.get('kernel_release', 'unknown')
             elif kernel_name == 'freebsd':
                 distribution = 'freebsd'
+                version = uname_info.get('kernel_release', 'unknown')
+            elif kernel_name == 'openbsd':
+                distribution = 'openbsd'
                 version = uname_info.get('kernel_release', 'unknown')
         
         # Determine OS family from distribution
@@ -233,6 +238,8 @@ class OSDetector:
             return 'alpine'
         elif 'freebsd' in distribution:
             return 'freebsd'
+        elif 'openbsd' in distribution:
+            return 'openbsd'
         elif 'darwin' in distribution or 'macos' in distribution:
             return 'macos'
         
