@@ -209,6 +209,10 @@ class OSDetector:
         # Clean up distribution name
         distribution = self._normalize_distribution_name(distribution)
         
+        # Set version for rolling release distributions
+        if distribution in ['arch', 'manjaro'] and version == 'unknown':
+            version = 'rolling'
+        
         return os_family, distribution, version
     
     def _normalize_distribution_name(self, distribution: str) -> str:
