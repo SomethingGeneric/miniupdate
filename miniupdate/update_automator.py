@@ -524,18 +524,26 @@ class UpdateAutomator:
                     logger.info(f"Per-host snapshot quota: keeping {vm_mapping.max_snapshots} newest snapshots "
                                f"for VM {vm_mapping.vmid}, deleting {len(snapshots_to_delete)} older ones")
             else:
-                # Fall back to time-based retention policy
-                retention_days = self.update_config.get('snapshot_retention_days', 7)
-                cutoff_time = datetime.now() - timedelta(days=retention_days)
+                # Use default snapshot count limit to prevent unbounded growth
+                default_max_snapshots = 5
+                if len(automated_snapshots) > default_max_snapshots:
+                    snapshots_to_delete = automated_snapshots[default_max_snapshots:]
+                    logger.info(f"Default snapshot quota: keeping {default_max_snapshots} newest snapshots "
+                               f"for VM {vm_mapping.vmid}, deleting {len(snapshots_to_delete)} older ones")
                 
-                snapshots_to_delete = [
-                    snap for snap in automated_snapshots 
-                    if snap['time'] < cutoff_time
-                ]
-                
-                if snapshots_to_delete:
-                    logger.info(f"Time-based retention: deleting {len(snapshots_to_delete)} snapshots "
-                               f"older than {retention_days} days for VM {vm_mapping.vmid}")
+                # Also apply time-based retention if configured (for additional cleanup)
+                if not snapshots_to_delete:
+                    retention_days = self.update_config.get('snapshot_retention_days', 7)
+                    cutoff_time = datetime.now() - timedelta(days=retention_days)
+                    
+                    snapshots_to_delete = [
+                        snap for snap in automated_snapshots 
+                        if snap['time'] < cutoff_time
+                    ]
+                    
+                    if snapshots_to_delete:
+                        logger.info(f"Time-based retention: deleting {len(snapshots_to_delete)} snapshots "
+                                   f"older than {retention_days} days for VM {vm_mapping.vmid}")
             
             # Delete the snapshots
             for snap in snapshots_to_delete:

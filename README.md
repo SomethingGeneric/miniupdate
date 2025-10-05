@@ -198,8 +198,9 @@ vmid = 200
 - Use `max_snapshots` to set a maximum number of automated snapshots per VM
 - When set, miniupdate will keep only the N newest snapshots and delete older ones
 - Useful for VMs on capacity-limited storage backends (e.g., small SSDs)
-- Takes precedence over the global `snapshot_retention_days` setting
-- If not set, the global time-based retention policy applies
+- Takes precedence over the default snapshot limit
+- **If not set, miniupdate defaults to keeping the 5 newest snapshots** to prevent unbounded growth
+- Time-based retention (`snapshot_retention_days`) provides additional cleanup after the count limit
 
 ### inventory.yml (Ansible Format)
 
@@ -363,7 +364,8 @@ The `update` command provides a complete automated update workflow with Proxmox 
 - `ping_timeout`: How long to wait for host availability (default: 2 minutes)
 - `snapshot_name_prefix`: Prefix for automated snapshots
 - `cleanup_snapshots`: Remove old snapshots after successful updates
-- `snapshot_retention_days`: Keep snapshots for N days
+- `snapshot_retention_days`: Time-based cleanup for snapshots older than N days
+- **Default snapshot limit**: Keeps 5 newest snapshots per VM (override with `max_snapshots` in vm_mapping.toml)
 
 ## Email Reports
 
