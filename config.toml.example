@@ -36,5 +36,7 @@ ping_timeout = 120
 ping_interval = 5
 snapshot_name_prefix = "pre-update"
 cleanup_snapshots = true
-snapshot_retention_days = 7
-opt_out_hosts = []
+snapshot_retention_days = 7  # Time-based retention (applies after default snapshot count limit)
+opt_out_hosts = []  # Hosts to skip automated updates (check-only)
+# Note: By default, miniupdate keeps the 5 newest snapshots per VM to prevent unbounded growth
+# Override this per-VM using max_snapshots in vm_mapping.toml
