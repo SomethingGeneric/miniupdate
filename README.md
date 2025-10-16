@@ -192,7 +192,22 @@ max_snapshots = 2
 [vms.db1]
 node = "pve-node2"
 vmid = 200
+
+# Example: Standalone Proxmox node with dedicated endpoint
+# For non-clustered Proxmox nodes, specify per-node connection details
+[vms.app1]
+node = "bingus"
+vmid = 300
+# Per-node endpoint for standalone (non-clustered) Proxmox nodes
+endpoint = "https://bingus.example.com:8006"
+username = "root@pam"              # Optional: defaults to global config
+password = "node-specific-password"  # Optional: defaults to global config
 ```
+
+**Proxmox Cluster vs Standalone Nodes:**
+
+- **Clustered Nodes**: If your Proxmox nodes are in a cluster, you only need the global `endpoint` in `config.toml`. All nodes can be managed through a single API connection.
+- **Standalone Nodes**: For independent Proxmox servers (not in a cluster), specify per-node `endpoint`, `username`, and `password` in the VM mapping. This allows managing VMs across multiple isolated Proxmox installations.
 
 **Per-Host Snapshot Quota:**
 - Use `max_snapshots` to set a maximum number of automated snapshots per VM

@@ -19,6 +19,9 @@ class VMMapping(NamedTuple):
     vmid: int
     host_name: str
     max_snapshots: Optional[int] = None
+    endpoint: Optional[str] = None  # Optional per-node Proxmox endpoint
+    username: Optional[str] = None  # Optional per-node credentials
+    password: Optional[str] = None  # Optional per-node credentials
 
 
 class VMMapper:
@@ -74,6 +77,9 @@ class VMMapper:
                 node = vm_info.get('node')
                 vmid = vm_info.get('vmid')
                 max_snapshots = vm_info.get('max_snapshots')
+                endpoint = vm_info.get('endpoint')  # Optional per-node endpoint
+                username = vm_info.get('username')  # Optional per-node credentials
+                password = vm_info.get('password')  # Optional per-node credentials
                 
                 if not node or not vmid:
                     logger.warning(f"Incomplete VM mapping for {host_name}: "
@@ -101,7 +107,10 @@ class VMMapper:
                     node=node,
                     vmid=vmid,
                     host_name=host_name,
-                    max_snapshots=max_snapshots
+                    max_snapshots=max_snapshots,
+                    endpoint=endpoint,
+                    username=username,
+                    password=password
                 )
             
             logger.info(f"Loaded VM mappings for {len(mappings)} hosts")
@@ -146,6 +155,14 @@ def create_example_vm_mapping(path: str = "vm_mapping.toml.example") -> None:
             "db1": {
                 "node": "pve-node2",
                 "vmid": 200
+            },
+            "app1": {
+                "node": "bingus",
+                "vmid": 300,
+                # Optional: Per-node Proxmox endpoint for standalone (non-clustered) nodes
+                "endpoint": "https://bingus.example.com:8006",
+                "username": "root@pam",  # Optional: defaults to global config
+                "password": "node-specific-password"  # Optional: defaults to global config
             }
         }
     }
@@ -154,6 +171,10 @@ def create_example_vm_mapping(path: str = "vm_mapping.toml.example") -> None:
         # Write with comments
         f.write("# VM Mapping Configuration for miniupdate\n")
         f.write("# Maps Ansible inventory host names to Proxmox VM IDs and nodes\n")
-        f.write("# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage\n\n")
+        f.write("# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage\n")
+        f.write("#\n")
+        f.write("# For Proxmox clusters: Only the global endpoint in config.toml is needed\n")
+        f.write("# For standalone nodes: Specify per-node 'endpoint', 'username', and 'password'\n")
+        f.write("#   (username and password default to global config if not specified)\n\n")
         
         toml.dump(example_config, f)
