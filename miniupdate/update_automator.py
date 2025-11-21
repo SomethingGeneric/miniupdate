@@ -318,8 +318,10 @@ class UpdateAutomator:
                         if reboot_result:
                             return reboot_result
                     else:
-                        logger.warning(f"Reboot after updates is enabled but no snapshot was created for {host.name} - "
-                                     f"skipping reboot for safety. Configure Proxmox integration and VM mapping to enable reboots.")
+                        logger.warning(
+                            f"Reboot after updates is enabled but no snapshot was created for {host.name} - "
+                            f"skipping reboot for safety. Configure Proxmox integration and VM mapping to enable reboots."
+                        )
                 else:
                     logger.info(f"Reboot after updates is disabled - skipping reboot for {host.name}")
                 
