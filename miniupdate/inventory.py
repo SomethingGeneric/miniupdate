@@ -4,11 +4,11 @@ Ansible inventory parsing for miniupdate.
 Supports parsing YAML and INI format Ansible inventory files.
 """
 
-import yaml
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-import configparser
-import logging
+
+import yaml
 
 
 logger = logging.getLogger(__name__)
@@ -47,18 +47,17 @@ class InventoryParser:
         """Parse inventory file and return list of hosts."""
         if self.inventory_path.suffix.lower() in [".yml", ".yaml"]:
             return self._parse_yaml()
-        elif self.inventory_path.suffix.lower() in [
+        if self.inventory_path.suffix.lower() in [
             ".ini",
             ".cfg",
             "",
         ] or self.inventory_path.name in ["hosts", "inventory"]:
             return self._parse_ini()
-        else:
-            # Try YAML first, then INI
-            try:
-                return self._parse_yaml()
-            except Exception:
-                return self._parse_ini()
+        # Try YAML first, then INI
+        try:
+            return self._parse_yaml()
+        except Exception:
+            return self._parse_ini()
 
     def _parse_yaml(self) -> List[Host]:
         """Parse YAML format inventory."""
@@ -66,7 +65,7 @@ class InventoryParser:
             with open(self.inventory_path, "r", encoding="utf-8") as f:
                 inventory = yaml.safe_load(f)
         except Exception as e:
-            raise ValueError(f"Error parsing YAML inventory: {e}")
+            raise ValueError(f"Error parsing YAML inventory: {e}") from e
 
         hosts = []
 
@@ -80,7 +79,7 @@ class InventoryParser:
             if "hosts" in all_section:
                 hosts.extend(self._parse_yaml_hosts(all_section["hosts"]))
             if "children" in all_section:
-                for group_name, group_data in all_section["children"].items():
+                for _group_name, group_data in all_section["children"].items():
                     if "hosts" in group_data:
                         hosts.extend(self._parse_yaml_hosts(group_data["hosts"]))
         else:
@@ -122,7 +121,7 @@ class InventoryParser:
             with open(self.inventory_path, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception as e:
-            raise ValueError(f"Error reading INI inventory: {e}")
+            raise ValueError(f"Error reading INI inventory: {e}") from e
 
         # Split into lines and process
         lines = content.split("\n")

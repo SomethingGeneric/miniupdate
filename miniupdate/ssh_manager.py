@@ -4,12 +4,14 @@ SSH connection manager for miniupdate.
 Handles SSH connections to remote hosts and command execution.
 """
 
-import paramiko
-import socket
 import logging
-from typing import Optional, Tuple, Dict, Any
-from pathlib import Path
 import os
+import socket
+from pathlib import Path
+from typing import Optional, Tuple, Dict, Any
+
+import paramiko
+
 from .inventory import Host
 
 
@@ -76,11 +78,14 @@ class SSHConnection:
                 connect_kwargs["password"] = password
 
             logger.debug(
-                f"Connecting to {self.host.hostname}:{self.host.port} as {final_username}"
+                "Connecting to %s:%s as %s",
+                self.host.hostname,
+                self.host.port,
+                final_username,
             )
             self.client.connect(**connect_kwargs)
             self.connected = True
-            logger.info(f"Successfully connected to {self.host.name}")
+            logger.info("Successfully connected to %s", self.host.name)
             return True
 
         except (
@@ -89,7 +94,7 @@ class SSHConnection:
             socket.error,
             Exception,
         ) as e:
-            logger.error(f"Failed to connect to {self.host.name}: {e}")
+            logger.error("Failed to connect to %s: %s", self.host.name, e)
             self.connected = False
             return False
 
@@ -108,18 +113,18 @@ class SSHConnection:
             raise RuntimeError(f"Not connected to {self.host.name}")
 
         try:
-            logger.debug(f"Executing command on {self.host.name}: {command}")
-            stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
+            logger.debug("Executing command on %s: %s", self.host.name, command)
+            _stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
 
             exit_code = stdout.channel.recv_exit_status()
             stdout_data = stdout.read().decode("utf-8", errors="replace")
             stderr_data = stderr.read().decode("utf-8", errors="replace")
 
-            logger.debug(f"Command finished with exit code {exit_code}")
+            logger.debug("Command finished with exit code %s", exit_code)
             return exit_code, stdout_data, stderr_data
 
         except Exception as e:
-            logger.error(f"Error executing command on {self.host.name}: {e}")
+            logger.error("Error executing command on %s: %s", self.host.name, e)
             return -1, "", str(e)
 
     def disconnect(self):
@@ -127,9 +132,9 @@ class SSHConnection:
         if self.client:
             try:
                 self.client.close()
-                logger.debug(f"Disconnected from {self.host.name}")
+                logger.debug("Disconnected from %s", self.host.name)
             except Exception as e:
-                logger.warning(f"Error disconnecting from {self.host.name}: {e}")
+                logger.warning("Error disconnecting from %s: %s", self.host.name, e)
             finally:
                 self.client = None
                 self.connected = False
@@ -187,7 +192,7 @@ class SSHManager:
             if connection:
                 successful_connections[host.name] = connection
 
-        logger.info(f"Connected to {len(successful_connections)}/{len(hosts)} hosts")
+        logger.info("Connected to %s/%s hosts", len(successful_connections), len(hosts))
         return successful_connections
 
     def execute_on_host(
@@ -228,7 +233,7 @@ class SSHManager:
             try:
                 results[host_name] = connection.execute_command(command, **kwargs)
             except Exception as e:
-                logger.error(f"Error executing command on {host_name}: {e}")
+                logger.error("Error executing command on %s: %s", host_name, e)
                 results[host_name] = (-1, "", str(e))
 
         return results

@@ -4,9 +4,9 @@ OS detection for miniupdate.
 Detects the operating system and distribution of remote hosts.
 """
 
-import re
 import logging
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Tuple
+
 from .ssh_manager import SSHConnection
 
 
@@ -112,16 +112,16 @@ class OSDetector:
                 architecture=architecture,
             )
 
-            logger.info(f"Detected OS on {self.connection.host.name}: {os_info}")
+            logger.info("Detected OS on %s: %s", self.connection.host.name, os_info)
             return os_info
 
         except Exception as e:
-            logger.error(f"Failed to detect OS on {self.connection.host.name}: {e}")
+            logger.error("Failed to detect OS on %s: %s", self.connection.host.name, e)
             return None
 
     def _get_uname_info(self) -> Dict[str, str]:
         """Get uname information."""
-        exit_code, stdout, stderr = self.connection.execute_command("uname -a")
+        exit_code, stdout, _stderr = self.connection.execute_command("uname -a")
         if exit_code != 0:
             return {}
 
@@ -139,7 +139,7 @@ class OSDetector:
 
     def _get_os_release_info(self) -> Dict[str, str]:
         """Get information from /etc/os-release."""
-        exit_code, stdout, stderr = self.connection.execute_command(
+        exit_code, stdout, _stderr = self.connection.execute_command(
             "cat /etc/os-release 2>/dev/null || true"
         )
         if exit_code != 0 or not stdout.strip():
@@ -157,7 +157,7 @@ class OSDetector:
 
     def _get_lsb_info(self) -> Dict[str, str]:
         """Get LSB information."""
-        exit_code, stdout, stderr = self.connection.execute_command(
+        exit_code, stdout, _stderr = self.connection.execute_command(
             "lsb_release -a 2>/dev/null || true"
         )
         if exit_code != 0 or not stdout.strip():
@@ -237,33 +237,33 @@ class OSDetector:
         # Handle common variations
         if "red hat" in distribution or "redhat" in distribution:
             return "rhel"
-        elif "centos" in distribution:
+        if "centos" in distribution:
             return "centos"
-        elif "ubuntu" in distribution:
+        if "ubuntu" in distribution:
             return "ubuntu"
-        elif (
+        if (
             "linuxmint" in distribution
             or "linux mint" in distribution
             or distribution == "mint"
         ):
             return "linuxmint"
-        elif "debian" in distribution:
+        if "debian" in distribution:
             return "debian"
-        elif "fedora" in distribution:
+        if "fedora" in distribution:
             return "fedora"
-        elif "opensuse" in distribution or "suse" in distribution:
+        if "opensuse" in distribution or "suse" in distribution:
             return "opensuse"
-        elif "arch" in distribution:
+        if "arch" in distribution:
             return "arch"
-        elif "manjaro" in distribution:
+        if "manjaro" in distribution:
             return "manjaro"
-        elif "alpine" in distribution:
+        if "alpine" in distribution:
             return "alpine"
-        elif "freebsd" in distribution:
+        if "freebsd" in distribution:
             return "freebsd"
-        elif "openbsd" in distribution:
+        if "openbsd" in distribution:
             return "openbsd"
-        elif "darwin" in distribution or "macos" in distribution:
+        if "darwin" in distribution or "macos" in distribution:
             return "macos"
 
         return distribution
@@ -278,7 +278,7 @@ class OSDetector:
                     return default_pm
 
         # Fallback: check for available package managers
-        for pm_name, commands in self.PACKAGE_MANAGERS.items():
+        for pm_name, _commands in self.PACKAGE_MANAGERS.items():
             if self._check_package_manager_exists(pm_name):
                 return pm_name
 
@@ -303,13 +303,12 @@ class OSDetector:
             # Normalize common architectures
             if arch in ["x86_64", "amd64"]:
                 return "x86_64"
-            elif arch in ["i386", "i686"]:
+            if arch in ["i386", "i686"]:
                 return "i386"
-            elif arch.startswith("arm"):
+            if arch.startswith("arm"):
                 return "arm"
-            elif arch.startswith("aarch64"):
+            if arch.startswith("aarch64"):
                 return "arm64"
-            else:
-                return arch
+            return arch
 
         return "unknown"
