@@ -4,11 +4,11 @@ Proxmox API client for miniupdate.
 Handles VM snapshots and management via Proxmox VE API.
 """
 
-import requests
 import logging
 import time
 from typing import Dict, Any, Optional, List
-from urllib.parse import urljoin
+
+import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 class ProxmoxAPIError(Exception):
     """Exception for Proxmox API errors."""
-
-    pass
 
 
 class ProxmoxClient:
@@ -85,16 +83,15 @@ class ProxmoxClient:
                 self.session.headers.update({"CSRFPreventionToken": self.csrf_token})
                 self.session.cookies.set("PVEAuthCookie", self.ticket)
 
-                logger.info(f"Successfully authenticated to Proxmox at {self.endpoint}")
+                logger.info("Successfully authenticated to Proxmox at %s", self.endpoint)
                 return True
-            else:
-                logger.error(
-                    f"Authentication failed: {response.status_code} - {response.text}"
-                )
-                return False
+            logger.error(
+                "Authentication failed: %s - %s", response.status_code, response.text
+            )
+            return False
 
         except Exception as e:
-            logger.error(f"Authentication error: {e}")
+            logger.error("Authentication error: %s", e)
             return False
 
     def _api_request(
@@ -139,7 +136,7 @@ class ProxmoxClient:
             return response.json()
 
         except requests.RequestException as e:
-            raise ProxmoxAPIError(f"Request failed: {e}")
+            raise ProxmoxAPIError(f"Request failed: {e}") from e
 
     def get_vm_status(self, node: str, vmid: int) -> Dict[str, Any]:
         """Get VM status."""
@@ -161,7 +158,8 @@ class ProxmoxClient:
             vmid: VM ID
             snapname: Snapshot name
             description: Snapshot description
-            include_ram: Whether to include RAM state in snapshot (default: False for faster, more reliable snapshots)
+            include_ram: Whether to include RAM state in snapshot
+                        (default: False for faster, more reliable snapshots)
         """
         path = f"/nodes/{node}/qemu/{vmid}/snapshot"
         data = {
@@ -175,7 +173,11 @@ class ProxmoxClient:
 
         snapshot_type = "with RAM" if include_ram else "without RAM"
         logger.info(
-            f"Creating snapshot '{snapname}' ({snapshot_type}) for VM {vmid} on node {node}"
+            "Creating snapshot '%s' (%s) for VM %s on node %s",
+            snapname,
+            snapshot_type,
+            vmid,
+            node,
         )
         return self._api_request("POST", path, data)
 
@@ -183,7 +185,7 @@ class ProxmoxClient:
         """Delete VM snapshot."""
         path = f"/nodes/{node}/qemu/{vmid}/snapshot/{snapname}"
 
-        logger.info(f"Deleting snapshot '{snapname}' for VM {vmid} on node {node}")
+        logger.info("Deleting snapshot '%s' for VM %s on node %s", snapname, vmid, node)
         return self._api_request("DELETE", path)
 
     def rollback_snapshot(self, node: str, vmid: int, snapname: str) -> Dict[str, Any]:
@@ -191,7 +193,7 @@ class ProxmoxClient:
         path = f"/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback"
 
         logger.warning(
-            f"Rolling back VM {vmid} on node {node} to snapshot '{snapname}'"
+            "Rolling back VM %s on node %s to snapshot '%s'", vmid, node, snapname
         )
         return self._api_request("POST", path)
 
@@ -215,20 +217,19 @@ class ProxmoxClient:
                 if status == "stopped":
                     exitstatus = task_data.get("exitstatus")
                     if exitstatus == "OK":
-                        logger.info(f"Task {upid} completed successfully")
+                        logger.info("Task %s completed successfully", upid)
                         return True
-                    else:
-                        logger.error(f"Task {upid} failed with status: {exitstatus}")
-                        return False
+                    logger.error("Task %s failed with status: %s", upid, exitstatus)
+                    return False
 
                 # Task still running
                 time.sleep(2)
 
             except Exception as e:
-                logger.warning(f"Error checking task status: {e}")
+                logger.warning("Error checking task status: %s", e)
                 time.sleep(2)
 
-        logger.error(f"Task {upid} timed out after {timeout} seconds")
+        logger.error("Task %s timed out after %s seconds", upid, timeout)
         return False
 
     def start_vm(self, node: str, vmid: int, timeout: int = 30) -> bool:
@@ -236,7 +237,7 @@ class ProxmoxClient:
         path = f"/nodes/{node}/qemu/{vmid}/status/start"
 
         try:
-            logger.info(f"Starting VM {vmid} on node {node}")
+            logger.info("Starting VM %s on node %s", vmid, node)
             response = self._api_request("POST", path)
 
             # If response contains UPID (task ID), wait for it to complete
@@ -247,7 +248,7 @@ class ProxmoxClient:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to start VM {vmid}: {e}")
+            logger.error("Failed to start VM %s: %s", vmid, e)
             return False
 
     def reboot_vm(self, node: str, vmid: int, timeout: int = 30) -> bool:
@@ -255,7 +256,7 @@ class ProxmoxClient:
         path = f"/nodes/{node}/qemu/{vmid}/status/reboot"
 
         try:
-            logger.info(f"Rebooting VM {vmid} on node {node}")
+            logger.info("Rebooting VM %s on node %s", vmid, node)
             response = self._api_request("POST", path)
 
             # If response contains UPID (task ID), wait for it to complete
@@ -266,5 +267,5 @@ class ProxmoxClient:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to reboot VM {vmid}: {e}")
+            logger.error("Failed to reboot VM %s: %s", vmid, e)
             return False
