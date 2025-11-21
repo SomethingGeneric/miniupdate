@@ -6,6 +6,7 @@ Maps Ansible inventory hosts to Proxmox VM IDs and nodes.
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, NamedTuple
 
@@ -125,7 +126,7 @@ class VMMapper:
 
         except Exception as e:
             logger.error("Failed to load VM mappings from %s: %s", self.mapping_path, e)
-            raise SystemExit(1) from e
+            sys.exit(1)
 
     def get_vm_info(self, host_name: str) -> Optional[VMMapping]:
         """Get VM mapping for a host."""

@@ -309,7 +309,6 @@ class OSDetector:
                 return "arm"
             if arch.startswith("aarch64"):
                 return "arm64"
-            else:
-                return arch
+            return arch
 
         return "unknown"
