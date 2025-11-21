@@ -83,7 +83,9 @@ class ProxmoxClient:
                 self.session.headers.update({"CSRFPreventionToken": self.csrf_token})
                 self.session.cookies.set("PVEAuthCookie", self.ticket)
 
-                logger.info("Successfully authenticated to Proxmox at %s", self.endpoint)
+                logger.info(
+                    "Successfully authenticated to Proxmox at %s", self.endpoint
+                )
                 return True
             logger.error(
                 "Authentication failed: %s - %s", response.status_code, response.text

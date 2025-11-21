@@ -67,7 +67,9 @@ class HostChecker:
             True if host becomes available, False if timeout
         """
         logger.info(
-            "Waiting for %s to become available (timeout: %ss)", host.name, max_wait_time
+            "Waiting for %s to become available (timeout: %ss)",
+            host.name,
+            max_wait_time,
         )
 
         start_time = time.time()
