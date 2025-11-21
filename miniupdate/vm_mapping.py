@@ -4,11 +4,12 @@ VM mapping for miniupdate.
 Maps Ansible inventory hosts to Proxmox VM IDs and nodes.
 """
 
-import toml
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, NamedTuple
-import os
+
+import toml
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,8 @@ class VMMapper:
 
         if not self.mapping_path.exists():
             logger.warning(
-                f"VM mapping file not found at {self.mapping_path}. "
-                f"VM operations will be disabled."
+                "VM mapping file not found at %s. VM operations will be disabled.",
+                self.mapping_path,
             )
             return mappings
 
@@ -71,7 +72,7 @@ class VMMapper:
             vms = config.get("vms", {})
             for host_name, vm_info in vms.items():
                 if not isinstance(vm_info, dict):
-                    logger.warning(f"Invalid VM mapping for {host_name}: {vm_info}")
+                    logger.warning("Invalid VM mapping for %s: %s", host_name, vm_info)
                     continue
 
                 node = vm_info.get("node")
@@ -80,15 +81,17 @@ class VMMapper:
 
                 if not node or not vmid:
                     logger.warning(
-                        f"Incomplete VM mapping for {host_name}: "
-                        f"missing node ({node}) or vmid ({vmid})"
+                        "Incomplete VM mapping for %s: missing node (%s) or vmid (%s)",
+                        host_name,
+                        node,
+                        vmid,
                     )
                     continue
 
                 try:
                     vmid = int(vmid)
                 except ValueError:
-                    logger.warning(f"Invalid vmid for {host_name}: {vmid}")
+                    logger.warning("Invalid vmid for %s: %s", host_name, vmid)
                     continue
 
                 # Validate max_snapshots if provided
@@ -97,12 +100,12 @@ class VMMapper:
                         max_snapshots = int(max_snapshots)
                         if max_snapshots < 0:
                             logger.warning(
-                                f"Invalid max_snapshots for {host_name}: must be >= 0"
+                                "Invalid max_snapshots for %s: must be >= 0", host_name
                             )
                             max_snapshots = None
                     except ValueError:
                         logger.warning(
-                            f"Invalid max_snapshots for {host_name}: {max_snapshots}"
+                            "Invalid max_snapshots for %s: %s", host_name, max_snapshots
                         )
                         max_snapshots = None
 
@@ -113,7 +116,7 @@ class VMMapper:
                     max_snapshots=max_snapshots,
                 )
 
-            logger.info(f"Loaded VM mappings for {len(mappings)} hosts")
+            logger.info("Loaded VM mappings for %s hosts", len(mappings))
 
             # logger.info(f"All loaded mappings: \n{str(mappings)}")
             # input("Press enter")
@@ -121,9 +124,8 @@ class VMMapper:
             return mappings
 
         except Exception as e:
-            logger.error(f"Failed to load VM mappings from {self.mapping_path}: {e}")
-            exit(1)
-            return mappings
+            logger.error("Failed to load VM mappings from %s: %s", self.mapping_path, e)
+            raise SystemExit(1) from e
 
     def get_vm_info(self, host_name: str) -> Optional[VMMapping]:
         """Get VM mapping for a host."""
@@ -158,7 +160,8 @@ def create_example_vm_mapping(path: str = "vm_mapping.toml.example") -> None:
         f.write("# VM Mapping Configuration for miniupdate\n")
         f.write("# Maps Ansible inventory host names to Proxmox VM IDs and nodes\n")
         f.write(
-            "# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage\n\n"
+            "# Optional: Set max_snapshots per VM to limit snapshot count "
+            "for capacity-limited storage\n\n"
         )
 
         toml.dump(example_config, f)

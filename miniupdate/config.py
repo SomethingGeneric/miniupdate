@@ -5,10 +5,11 @@ Handles loading and parsing of TOML configuration files containing
 email credentials and inventory paths.
 """
 
-import toml
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-import os
+
+import toml
 
 
 class Config:
@@ -55,7 +56,7 @@ class Config:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 return toml.load(f)
         except Exception as e:
-            raise ValueError(f"Error parsing configuration file: {e}")
+            raise ValueError(f"Error parsing configuration file: {e}") from e
 
     @property
     def smtp_config(self) -> Dict[str, Any]:
@@ -178,7 +179,8 @@ def create_example_config(path: str = "config.toml.example") -> None:
             "snapshot_name_prefix": "pre-update",
             "cleanup_snapshots": True,
             "snapshot_retention_days": 7,
-            "opt_out_hosts": [],  # List of hosts to exclude from automatic updates (check-only mode)
+            # List of hosts to exclude from automatic updates (check-only mode)
+            "opt_out_hosts": [],
         },
     }
 
