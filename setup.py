@@ -6,7 +6,7 @@ from pathlib import Path
 # Read README
 readme_path = Path(__file__).parent / "README.md"
 if readme_path.exists():
-    with open(readme_path, 'r', encoding='utf-8') as f:
+    with open(readme_path, "r", encoding="utf-8") as f:
         long_description = f.read()
 else:
     long_description = "Minimal patch check script for virtual guests"
@@ -14,15 +14,12 @@ else:
 # Read requirements
 requirements_path = Path(__file__).parent / "requirements.txt"
 if requirements_path.exists():
-    with open(requirements_path, 'r', encoding='utf-8') as f:
-        requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    with open(requirements_path, "r", encoding="utf-8") as f:
+        requirements = [
+            line.strip() for line in f if line.strip() and not line.startswith("#")
+        ]
 else:
-    requirements = [
-        'paramiko>=3.0.0',
-        'PyYAML>=6.0',
-        'toml>=0.10.2',
-        'click>=8.0.0'
-    ]
+    requirements = ["paramiko>=3.0.0", "PyYAML>=6.0", "toml>=0.10.2", "click>=8.0.0"]
 
 setup(
     name="miniupdate",
@@ -35,8 +32,8 @@ setup(
     python_requires=">=3.7",
     install_requires=requirements,
     entry_points={
-        'console_scripts': [
-            'miniupdate=miniupdate.main:main',
+        "console_scripts": [
+            "miniupdate=miniupdate.main:main",
         ],
     },
     classifiers=[
