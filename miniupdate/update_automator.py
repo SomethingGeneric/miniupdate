@@ -308,13 +308,18 @@ class UpdateAutomator:
                 logger.info(f"Successfully applied updates on {host.name}")
                 
                 # Reboot if configured (only for hosts that actually received updates)
+                # AND only if a snapshot was created (safety requirement)
                 if self.update_config.get('reboot_after_updates', False):
-                    logger.info(f"Reboot after updates is enabled - proceeding with reboot for {host.name}")
-                    reboot_result = self._handle_reboot_and_verification(
-                        host, vm_mapping, snapshot_name, start_time
-                    )
-                    if reboot_result:
-                        return reboot_result
+                    if snapshot_name:
+                        logger.info(f"Reboot after updates is enabled - proceeding with reboot for {host.name}")
+                        reboot_result = self._handle_reboot_and_verification(
+                            host, vm_mapping, snapshot_name, start_time
+                        )
+                        if reboot_result:
+                            return reboot_result
+                    else:
+                        logger.warning(f"Reboot after updates is enabled but no snapshot was created for {host.name} - "
+                                     f"skipping reboot for safety. Configure Proxmox integration and VM mapping to enable reboots.")
                 else:
                     logger.info(f"Reboot after updates is disabled - skipping reboot for {host.name}")
                 
