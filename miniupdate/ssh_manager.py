@@ -14,7 +14,6 @@ import paramiko
 
 from .inventory import Host
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -21,7 +21,6 @@ from .package_managers import get_package_manager
 from .email_sender import EmailSender, UpdateReport
 from .update_automator import UpdateAutomator, AutomatedUpdateReport, UpdateResult
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

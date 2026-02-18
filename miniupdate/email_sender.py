@@ -19,7 +19,6 @@ from .package_managers import PackageUpdate
 from .inventory import Host
 from .os_detector import OSInfo
 
-
 logger = logging.getLogger(__name__)
 
 

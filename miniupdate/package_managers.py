@@ -11,7 +11,6 @@ from typing import List, Dict, Any, Tuple, Optional
 from .ssh_manager import SSHConnection
 from .os_detector import OSInfo
 
-
 logger = logging.getLogger(__name__)
 
 

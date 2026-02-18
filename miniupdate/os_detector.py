@@ -9,7 +9,6 @@ from typing import Optional, Dict, Tuple
 
 from .ssh_manager import SSHConnection
 
-
 logger = logging.getLogger(__name__)
 
 
