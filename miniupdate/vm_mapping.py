@@ -82,6 +82,9 @@ class VMMapper:
                 node = vm_info.get("node")
                 vmid = vm_info.get("vmid")
                 max_snapshots = vm_info.get("max_snapshots")
+                endpoint = vm_info.get("endpoint")  # Optional per-node endpoint
+                username = vm_info.get("username")  # Optional per-node credentials
+                password = vm_info.get("password")  # Optional per-node credentials
 
                 if not node or not vmid:
                     logger.warning(
@@ -118,6 +121,9 @@ class VMMapper:
                     vmid=vmid,
                     host_name=host_name,
                     max_snapshots=max_snapshots,
+                    endpoint=endpoint,
+                    username=username,
+                    password=password,
                 )
 
             logger.info("Loaded VM mappings for %s hosts", len(mappings))
