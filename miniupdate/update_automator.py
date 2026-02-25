@@ -410,7 +410,9 @@ class UpdateAutomator:
             # Get appropriate Proxmox client for this VM
             proxmox_client = self._get_proxmox_client(vm_mapping)
             if not proxmox_client:
-                logger.error(f"Failed to get Proxmox client for VM {vm_mapping.vmid} on node {vm_mapping.node}")
+                logger.error(
+                    f"Failed to get Proxmox client for VM {vm_mapping.vmid} on node {vm_mapping.node}"
+                )
                 return None
 
             response = self.proxmox_client.create_snapshot(
