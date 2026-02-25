@@ -1,5 +1,10 @@
 # VM Mapping Configuration for miniupdate
 # Maps Ansible inventory host names to Proxmox VM IDs and nodes
+# Optional: Set max_snapshots per VM to limit snapshot count for capacity-limited storage
+#
+# For Proxmox clusters: Only the global endpoint in config.toml is needed
+# For standalone nodes: Specify per-node 'endpoint', 'username', and 'password'
+#   (username and password default to global config if not specified)
 
 [vms.web1]
 node = "pve-node1"
@@ -8,7 +13,17 @@ vmid = 100
 [vms.web2]
 node = "pve-node1"
 vmid = 101
+max_snapshots = 2  # Optional: limit to 2 snapshots for capacity-limited storage
 
 [vms.db1]
 node = "pve-node2"
 vmid = 200
+
+# Example: Standalone Proxmox node with dedicated endpoint
+[vms.app1]
+node = "bingus"
+vmid = 300
+# Optional: Per-node Proxmox endpoint for standalone (non-clustered) nodes
+endpoint = "https://bingus.example.com:8006"
+username = "root@pam"  # Optional: defaults to global config
+password = "node-specific-password"  # Optional: defaults to global config

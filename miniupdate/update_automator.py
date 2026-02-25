@@ -68,20 +68,16 @@ class UpdateAutomator:
         self.ssh_config = config.ssh_config
 
         # Initialize components
-        self.proxmox_client = None
+        self.proxmox_clients = {}  # Dictionary mapping endpoint -> ProxmoxClient
+        self.default_proxmox_config = None
         self.vm_mapper = None
         self.host_checker = HostChecker(self.ssh_config)
 
         # Setup Proxmox client if configured
         if self.proxmox_config:
             try:
-                self.proxmox_client = ProxmoxClient(
-                    endpoint=self.proxmox_config["endpoint"],
-                    username=self.proxmox_config["username"],
-                    password=self.proxmox_config["password"],
-                    verify_ssl=self.proxmox_config.get("verify_ssl", True),
-                    timeout=self.proxmox_config.get("timeout", 30),
-                )
+                # Store default Proxmox config for fallback
+                self.default_proxmox_config = self.proxmox_config
 
                 # Setup VM mapper
                 vm_mapping_file = self.proxmox_config.get("vm_mapping_file")
@@ -91,8 +87,8 @@ class UpdateAutomator:
 
                 logger.info("Proxmox integration enabled")
             except Exception as e:
-                logger.error(f"Failed to initialize Proxmox client: {e}")
-                self.proxmox_client = None
+                logger.error(f"Failed to initialize Proxmox configuration: {e}")
+                self.default_proxmox_config = None
         else:
             logger.info("Proxmox integration disabled - no configuration provided")
 
@@ -123,6 +119,68 @@ class UpdateAutomator:
                 path_obj = self.config.config_path.parent / path_obj
 
         return str(path_obj)
+
+    def _get_proxmox_client(self, vm_mapping: VMMapping) -> Optional[ProxmoxClient]:
+        """
+        Get or create appropriate Proxmox client for the given VM mapping.
+
+        Supports per-node endpoints for standalone (non-clustered) Proxmox nodes.
+        Falls back to global endpoint if no per-node endpoint is specified.
+
+        Args:
+            vm_mapping: VM mapping containing optional per-node endpoint
+
+        Returns:
+            ProxmoxClient instance or None if configuration is missing
+        """
+        if not self.default_proxmox_config:
+            logger.error("No Proxmox configuration available")
+            return None
+
+        # Determine endpoint, username, and password
+        # Priority: per-node config > global config
+        endpoint = vm_mapping.endpoint or self.default_proxmox_config.get("endpoint")
+        username = vm_mapping.username or self.default_proxmox_config.get("username")
+        password = vm_mapping.password or self.default_proxmox_config.get("password")
+
+        if not endpoint or not username or not password:
+            logger.error(
+                f"Incomplete Proxmox configuration for VM {vm_mapping.vmid} "
+                f"on node {vm_mapping.node}"
+            )
+            return None
+
+        # Normalize endpoint for consistent key
+        endpoint = endpoint.rstrip("/")
+
+        # Return existing client if already created for this endpoint
+        if endpoint in self.proxmox_clients:
+            return self.proxmox_clients[endpoint]
+
+        # Create new client for this endpoint
+        try:
+            client = ProxmoxClient(
+                endpoint=endpoint,
+                username=username,
+                password=password,
+                verify_ssl=self.default_proxmox_config.get("verify_ssl", True),
+                timeout=self.default_proxmox_config.get("timeout", 30),
+            )
+
+            # Authenticate immediately to validate credentials
+            if not client.authenticate():
+                logger.error(f"Failed to authenticate to Proxmox at {endpoint}")
+                return None
+
+            # Cache the client
+            self.proxmox_clients[endpoint] = client
+            logger.info(f"Created Proxmox client for endpoint {endpoint}")
+
+            return client
+
+        except Exception as e:
+            logger.error(f"Failed to create Proxmox client for {endpoint}: {e}")
+            return None
 
     def process_host_automated_update(
         self, host: Host, timeout: int = 120
@@ -287,7 +345,7 @@ class UpdateAutomator:
                 )
 
                 # Create snapshot if Proxmox is configured and VM mapping exists
-                if self.proxmox_client and vm_mapping:
+                if self.default_proxmox_config and vm_mapping:
                     snapshot_name = self._create_snapshot(vm_mapping, start_time)
                     if not snapshot_name:
                         return AutomatedUpdateReport(
@@ -319,7 +377,7 @@ class UpdateAutomator:
                     )
 
                     # Revert snapshot if available
-                    if snapshot_name and self.proxmox_client and vm_mapping:
+                    if snapshot_name and self.default_proxmox_config and vm_mapping:
                         if self._revert_snapshot(vm_mapping, snapshot_name):
                             result = UpdateResult.REVERTED
                             error_details += " - reverted to snapshot"
@@ -367,7 +425,7 @@ class UpdateAutomator:
                 # Clean up snapshot if successful and configured
                 if (
                     snapshot_name
-                    and self.proxmox_client
+                    and self.default_proxmox_config
                     and vm_mapping
                     and self.update_config.get("cleanup_snapshots", False)
                 ):
@@ -406,11 +464,15 @@ class UpdateAutomator:
         snapshot_name = f"{prefix}-{timestamp}"
 
         try:
-            if not self.proxmox_client.authenticate():
-                logger.error("Failed to authenticate to Proxmox")
+            # Get appropriate Proxmox client for this VM
+            proxmox_client = self._get_proxmox_client(vm_mapping)
+            if not proxmox_client:
+                logger.error(
+                    f"Failed to get Proxmox client for VM {vm_mapping.vmid} on node {vm_mapping.node}"
+                )
                 return None
 
-            response = self.proxmox_client.create_snapshot(
+            response = proxmox_client.create_snapshot(
                 vm_mapping.node,
                 vm_mapping.vmid,
                 snapshot_name,
@@ -421,9 +483,7 @@ class UpdateAutomator:
             # Wait for snapshot task to complete if UPID is returned
             if "data" in response and isinstance(response["data"], str):
                 upid = response["data"]
-                if self.proxmox_client.wait_for_task(
-                    vm_mapping.node, upid, timeout=300
-                ):
+                if proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
                     logger.info(
                         f"Snapshot {snapshot_name} created successfully for VM {vm_mapping.vmid}"
                     )
@@ -447,20 +507,27 @@ class UpdateAutomator:
     def _revert_snapshot(self, vm_mapping: VMMapping, snapshot_name: str) -> bool:
         """Revert VM to snapshot."""
         try:
+            # Get appropriate Proxmox client for this VM
+            proxmox_client = self._get_proxmox_client(vm_mapping)
+            if not proxmox_client:
+                logger.error(
+                    f"Failed to get Proxmox client for VM {vm_mapping.vmid} "
+                    f"on node {vm_mapping.node}"
+                )
+                return False
+
             logger.warning(
                 f"Reverting VM {vm_mapping.vmid} to snapshot {snapshot_name}"
             )
 
-            response = self.proxmox_client.rollback_snapshot(
+            response = proxmox_client.rollback_snapshot(
                 vm_mapping.node, vm_mapping.vmid, snapshot_name
             )
 
             # Wait for rollback task to complete if UPID is returned
             if "data" in response and isinstance(response["data"], str):
                 upid = response["data"]
-                if not self.proxmox_client.wait_for_task(
-                    vm_mapping.node, upid, timeout=300
-                ):
+                if not proxmox_client.wait_for_task(vm_mapping.node, upid, timeout=300):
                     logger.error(
                         f"Snapshot rollback task failed for VM {vm_mapping.vmid}"
                     )
@@ -472,7 +539,7 @@ class UpdateAutomator:
             logger.info(
                 f"Ensuring VM {vm_mapping.vmid} is powered on after snapshot restore"
             )
-            if not self.proxmox_client.start_vm(
+            if not proxmox_client.start_vm(
                 vm_mapping.node, vm_mapping.vmid, timeout=60
             ):
                 logger.error(
@@ -508,7 +575,7 @@ class UpdateAutomator:
             error_details = "Failed to send reboot command"
 
             # Revert snapshot if available
-            if snapshot_name and self.proxmox_client and vm_mapping:
+            if snapshot_name and self.default_proxmox_config and vm_mapping:
                 if self._revert_snapshot(vm_mapping, snapshot_name):
                     result = UpdateResult.REVERTED
                     error_details += " - reverted to snapshot"
@@ -540,7 +607,7 @@ class UpdateAutomator:
             error_details = f"Host did not become available within {ping_timeout} seconds after reboot"
 
             # Revert snapshot if available
-            if snapshot_name and self.proxmox_client and vm_mapping:
+            if snapshot_name and self.default_proxmox_config and vm_mapping:
                 if self._revert_snapshot(vm_mapping, snapshot_name):
                     result = UpdateResult.REVERTED
                     error_details += " - reverted to snapshot"
@@ -567,11 +634,18 @@ class UpdateAutomator:
     def _cleanup_old_snapshots(self, vm_mapping: VMMapping):
         """Clean up old automated snapshots based on retention policy or count limit."""
         try:
+            # Get appropriate Proxmox client for this VM
+            proxmox_client = self._get_proxmox_client(vm_mapping)
+            if not proxmox_client:
+                logger.error(
+                    f"Failed to get Proxmox client for VM {vm_mapping.vmid} "
+                    f"on node {vm_mapping.node}"
+                )
+                return
+
             prefix = self.update_config.get("snapshot_name_prefix", "pre-update")
 
-            snapshots = self.proxmox_client.list_snapshots(
-                vm_mapping.node, vm_mapping.vmid
-            )
+            snapshots = proxmox_client.list_snapshots(vm_mapping.node, vm_mapping.vmid)
 
             # Filter to only automated snapshots with valid timestamps
             automated_snapshots = []
@@ -644,7 +718,7 @@ class UpdateAutomator:
                 logger.info(
                     f"Deleting old snapshot {snap_name} for VM {vm_mapping.vmid}"
                 )
-                self.proxmox_client.delete_snapshot(
+                proxmox_client.delete_snapshot(
                     vm_mapping.node, vm_mapping.vmid, snap_name
                 )
 
