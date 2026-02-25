@@ -21,15 +21,11 @@ from .package_managers import get_package_manager
 from .email_sender import EmailSender, UpdateReport
 from .update_automator import UpdateAutomator, AutomatedUpdateReport, UpdateResult
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('miniupdate.log')
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("miniupdate.log")],
 )
 logger = logging.getLogger(__name__)
 
@@ -37,162 +33,184 @@ logger = logging.getLogger(__name__)
 def validate_inventory_mapping(hosts, config, vm_mapper):
     """
     Validate that all inventory hosts are either:
-    1. In the VM mapping TOML file, OR  
+    1. In the VM mapping TOML file, OR
     2. Explicitly listed in the opt-out hosts list
-    
+
     Returns a list of unmapped hosts that need attention.
     """
     unmapped_hosts = []
     opt_out_hosts = set(config.update_opt_out_hosts)
-    
+
     for host in hosts:
         has_vm_mapping = vm_mapper and vm_mapper.has_vm_mapping(host.name)
         is_opt_out = host.name in opt_out_hosts
-        
+
         if not has_vm_mapping and not is_opt_out:
             unmapped_hosts.append(host)
-    
+
     return unmapped_hosts
 
 
 def process_host(host, ssh_config, config, timeout=120):
     """Process a single host - detect OS and check for updates."""
     logger.info(f"Processing host: {host.name}")
-    
+
     try:
         with SSHManager(ssh_config) as ssh_manager:
             # Connect to host
             connection = ssh_manager.connect_to_host(host, timeout=timeout)
             if not connection:
                 return UpdateReport(host, None, [], error="Failed to connect via SSH")
-            
+
             # Detect OS
             os_detector = OSDetector(connection)
             os_info = os_detector.detect_os()
-            
+
             if not os_info:
-                return UpdateReport(host, None, [], error="Failed to detect operating system")
-            
+                return UpdateReport(
+                    host, None, [], error="Failed to detect operating system"
+                )
+
             # Get package manager
             package_manager = get_package_manager(connection, os_info)
             if not package_manager:
-                return UpdateReport(host, os_info, [], 
-                                  error=f"Unsupported package manager: {os_info.package_manager}")
-            
+                return UpdateReport(
+                    host,
+                    os_info,
+                    [],
+                    error=f"Unsupported package manager: {os_info.package_manager}",
+                )
+
             # Refresh package cache
             logger.info(f"Refreshing package cache on {host.name}")
             if not package_manager.refresh_cache():
                 logger.warning(f"Failed to refresh package cache on {host.name}")
-            
+
             # Check for updates
             logger.info(f"Checking for updates on {host.name}")
             updates = package_manager.check_updates()
-            
+
             # Check if this host is in the opt-out list
             opt_out_hosts = config.update_opt_out_hosts
             is_opt_out_host = host.name in opt_out_hosts
-            
+
             if is_opt_out_host:
                 logger.info(f"Host {host.name} is in opt-out list - check-only mode")
-            
-            logger.info(f"Found {len(updates)} updates on {host.name} "
-                       f"({sum(1 for u in updates if u.security)} security)")
-            
+
+            logger.info(
+                f"Found {len(updates)} updates on {host.name} "
+                f"({sum(1 for u in updates if u.security)} security)"
+            )
+
             return UpdateReport(host, os_info, updates)
-            
+
     except Exception as e:
         logger.error(f"Error processing host {host.name}: {e}")
         return UpdateReport(host, None, [], error=str(e))
 
 
 @click.group()
-@click.option('--config', '-c', help='Configuration file path')
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option("--config", "-c", help="Configuration file path")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def cli(ctx, config, verbose):
     """miniupdate - Minimal patch check script for virtual guests."""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-    
+
     ctx.ensure_object(dict)
-    ctx.obj['config_path'] = config
+    ctx.obj["config_path"] = config
 
 
 @cli.command()
-@click.option('--parallel', '-p', default=5, help='Number of parallel connections')
-@click.option('--timeout', '-t', default=120, help='SSH timeout in seconds')
-@click.option('--dry-run', is_flag=True, help='Show what would be done without sending email')
+@click.option("--parallel", "-p", default=5, help="Number of parallel connections")
+@click.option("--timeout", "-t", default=120, help="SSH timeout in seconds")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be done without sending email"
+)
 @click.pass_context
 def check(ctx, parallel, timeout, dry_run):
     """Check for updates on all hosts and send email report."""
     try:
         # Load configuration
-        config = Config(ctx.obj.get('config_path'))
+        config = Config(ctx.obj.get("config_path"))
         logger.info(f"Loaded configuration from {config.config_path}")
-        
+
         # Parse inventory
         inventory_parser = InventoryParser(config.inventory_path)
         hosts = inventory_parser.parse()
         logger.info(f"Loaded {len(hosts)} hosts from inventory")
-        
+
         if not hosts:
             logger.error("No hosts found in inventory")
             return 1
-        
+
         # Process hosts in parallel
-        logger.info(f"Processing {len(hosts)} hosts with {parallel} parallel connections")
+        logger.info(
+            f"Processing {len(hosts)} hosts with {parallel} parallel connections"
+        )
         reports = []
-        
+
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             # Submit all host processing tasks
             future_to_host = {
-                executor.submit(process_host, host, config.ssh_config, config, timeout): host
+                executor.submit(
+                    process_host, host, config.ssh_config, config, timeout
+                ): host
                 for host in hosts
             }
-            
+
             # Collect results as they complete
             for future in as_completed(future_to_host):
                 host = future_to_host[future]
                 try:
                     report = future.result()
                     reports.append(report)
-                    
+
                     # Log summary for this host
                     if report.error:
                         logger.warning(f"{host.name}: ERROR - {report.error}")
                     elif report.has_security_updates:
-                        logger.warning(f"{host.name}: {len(report.security_updates)} SECURITY updates, "
-                                     f"{len(report.regular_updates)} regular updates")
+                        logger.warning(
+                            f"{host.name}: {len(report.security_updates)} SECURITY updates, "
+                            f"{len(report.regular_updates)} regular updates"
+                        )
                     elif report.has_updates:
-                        logger.info(f"{host.name}: {len(report.updates)} updates available")
+                        logger.info(
+                            f"{host.name}: {len(report.updates)} updates available"
+                        )
                     else:
                         logger.info(f"{host.name}: No updates needed")
-                        
+
                 except Exception as e:
                     logger.error(f"Host {host.name} processing failed: {e}")
                     reports.append(UpdateReport(host, None, [], error=str(e)))
-        
+
         # Generate summary
         total_hosts = len(reports)
         hosts_with_updates = sum(1 for r in reports if r.has_updates)
         hosts_with_security = sum(1 for r in reports if r.has_security_updates)
         hosts_with_errors = sum(1 for r in reports if r.error)
         opt_out_hosts = config.update_opt_out_hosts
-        opt_out_with_updates = sum(1 for r in reports if r.host.name in opt_out_hosts and r.has_updates)
-        
+        opt_out_with_updates = sum(
+            1 for r in reports if r.host.name in opt_out_hosts and r.has_updates
+        )
+
         logger.info(f"\nSUMMARY:")
         logger.info(f"Total hosts checked: {total_hosts}")
         logger.info(f"Hosts with updates: {hosts_with_updates}")
         logger.info(f"Hosts with security updates: {hosts_with_security}")
         logger.info(f"Hosts with errors: {hosts_with_errors}")
         if opt_out_hosts:
-            logger.info(f"Opt-out hosts (check-only): {len(opt_out_hosts)} ({opt_out_with_updates} with updates)")
-        
+            logger.info(
+                f"Opt-out hosts (check-only): {len(opt_out_hosts)} ({opt_out_with_updates} with updates)"
+            )
+
         # Send email report
         if not dry_run:
             logger.info("Sending email report...")
             email_sender = EmailSender(config.smtp_config)
-            
+
             if email_sender.send_update_report(reports):
                 logger.info("Email report sent successfully")
             else:
@@ -200,86 +218,106 @@ def check(ctx, parallel, timeout, dry_run):
                 return 1
         else:
             logger.info("Dry run - email report not sent")
-        
+
         return 0
-        
+
     except Exception as e:
         logger.error(f"Application error: {e}")
         return 1
 
 
 @cli.command()
-@click.option('--parallel', '-p', default=5, help='Number of parallel connections')
-@click.option('--timeout', '-t', default=120, help='SSH timeout in seconds')
-@click.option('--dry-run', is_flag=True, help='Show what would be done without applying updates')
+@click.option("--parallel", "-p", default=5, help="Number of parallel connections")
+@click.option("--timeout", "-t", default=120, help="SSH timeout in seconds")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be done without applying updates"
+)
 @click.pass_context
 def update(ctx, parallel, timeout, dry_run):
     """Apply updates with Proxmox snapshot integration."""
     try:
         # Load configuration
-        config = Config(ctx.obj.get('config_path'))
+        config = Config(ctx.obj.get("config_path"))
         logger.info(f"Loaded configuration from {config.config_path}")
-        
+
         # Parse inventory
         inventory_parser = InventoryParser(config.inventory_path)
         hosts = inventory_parser.parse()
         logger.info(f"Loaded {len(hosts)} hosts from inventory")
-        
+
         if not hosts:
             logger.error("No hosts found in inventory")
             return 1
-        
+
         # Initialize update automator
         automator = UpdateAutomator(config)
-        
+
         # Validate inventory mapping before processing
         unmapped_hosts = validate_inventory_mapping(hosts, config, automator.vm_mapper)
         if unmapped_hosts:
-            logger.warning(f"Found {len(unmapped_hosts)} hosts not in VM mapping or opt-out list:")
+            logger.warning(
+                f"Found {len(unmapped_hosts)} hosts not in VM mapping or opt-out list:"
+            )
             for host in unmapped_hosts:
                 logger.warning(f"  - {host.name} ({host.hostname})")
-            logger.warning("These hosts will be processed but may need manual configuration.")
-        
+            logger.warning(
+                "These hosts will be processed but may need manual configuration."
+            )
+
         if dry_run:
             logger.info("DRY RUN MODE - No updates will be applied")
             # For dry run, just check what updates are available
             return check.callback(parallel, timeout, dry_run)
-        
+
         # Process hosts in parallel for automated updates
-        logger.info(f"Processing {len(hosts)} hosts with automated updates using {parallel} parallel connections")
+        logger.info(
+            f"Processing {len(hosts)} hosts with automated updates using {parallel} parallel connections"
+        )
         reports = []
-        
+
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             # Submit all host processing tasks
             future_to_host = {
-                executor.submit(automator.process_host_automated_update, host, timeout): host
+                executor.submit(
+                    automator.process_host_automated_update, host, timeout
+                ): host
                 for host in hosts
             }
-            
+
             # Collect results as they complete
             for future in as_completed(future_to_host):
                 host = future_to_host[future]
                 try:
                     report = future.result()
                     reports.append(report)
-                    
+
                     # Log summary for this host
                     if report.result == UpdateResult.SUCCESS:
-                        logger.info(f"{host.name}: SUCCESS - Applied {len(report.update_report.updates)} updates")
+                        logger.info(
+                            f"{host.name}: SUCCESS - Applied {len(report.update_report.updates)} updates"
+                        )
                     elif report.result == UpdateResult.NO_UPDATES:
-                        logger.info(f"{host.name}: NO UPDATES - All packages up to date")
+                        logger.info(
+                            f"{host.name}: NO UPDATES - All packages up to date"
+                        )
                     elif report.result == UpdateResult.OPT_OUT:
                         if report.update_report.has_updates:
-                            logger.info(f"{host.name}: OPT-OUT - {len(report.update_report.updates)} updates available (manual action required)")
+                            logger.info(
+                                f"{host.name}: OPT-OUT - {len(report.update_report.updates)} updates available (manual action required)"
+                            )
                         else:
                             logger.info(f"{host.name}: OPT-OUT - No updates available")
                     elif report.result == UpdateResult.REVERTED:
                         logger.error(f"{host.name}: REVERTED - {report.error_details}")
                     elif report.result == UpdateResult.REVERT_FAILED:
-                        logger.critical(f"{host.name}: REVERT FAILED - {report.error_details}")
+                        logger.critical(
+                            f"{host.name}: REVERT FAILED - {report.error_details}"
+                        )
                     else:
-                        logger.error(f"{host.name}: {report.result.value.upper()} - {report.error_details}")
-                        
+                        logger.error(
+                            f"{host.name}: {report.result.value.upper()} - {report.error_details}"
+                        )
+
                 except Exception as e:
                     logger.error(f"Host {host.name} processing failed: {e}")
                     # Create error report
@@ -291,22 +329,33 @@ def update(ctx, parallel, timeout, dry_run):
                         snapshot_name=None,
                         error_details=str(e),
                         start_time=datetime.now(),
-                        end_time=datetime.now()
+                        end_time=datetime.now(),
                     )
                     reports.append(error_report)
-        
+
         # Generate summary
         total_hosts = len(reports)
         successful_updates = sum(1 for r in reports if r.result == UpdateResult.SUCCESS)
-        no_updates_needed = sum(1 for r in reports if r.result == UpdateResult.NO_UPDATES)
+        no_updates_needed = sum(
+            1 for r in reports if r.result == UpdateResult.NO_UPDATES
+        )
         opt_out_hosts = sum(1 for r in reports if r.result == UpdateResult.OPT_OUT)
-        failed_updates = sum(1 for r in reports if r.result in [
-            UpdateResult.FAILED_UPDATES, UpdateResult.FAILED_REBOOT, 
-            UpdateResult.FAILED_AVAILABILITY, UpdateResult.FAILED_SNAPSHOT
-        ])
+        failed_updates = sum(
+            1
+            for r in reports
+            if r.result
+            in [
+                UpdateResult.FAILED_UPDATES,
+                UpdateResult.FAILED_REBOOT,
+                UpdateResult.FAILED_AVAILABILITY,
+                UpdateResult.FAILED_SNAPSHOT,
+            ]
+        )
         reverted_hosts = sum(1 for r in reports if r.result == UpdateResult.REVERTED)
-        critical_failures = sum(1 for r in reports if r.result == UpdateResult.REVERT_FAILED)
-        
+        critical_failures = sum(
+            1 for r in reports if r.result == UpdateResult.REVERT_FAILED
+        )
+
         logger.info(f"\nUPDATE SUMMARY:")
         logger.info(f"Total hosts processed: {total_hosts}")
         logger.info(f"Successfully updated: {successful_updates}")
@@ -316,29 +365,39 @@ def update(ctx, parallel, timeout, dry_run):
         logger.info(f"Reverted to snapshot: {reverted_hosts}")
         if critical_failures > 0:
             logger.critical(f"CRITICAL: Revert failures: {critical_failures}")
-        
+
         # Send email report with update results
         logger.info("Sending automated update email report...")
         email_sender = EmailSender(config.smtp_config)
-        
+
         if email_sender.send_automated_update_report(reports, unmapped_hosts):
             logger.info("Automated update email report sent successfully")
         else:
             logger.error("Failed to send automated update email report")
             return 1
-        
+
         # Return non-zero exit code if there were any critical failures
         return 1 if critical_failures > 0 else 0
-        
+
     except Exception as e:
         logger.error(f"Application error: {e}")
         return 1
 
 
 @cli.command()
-@click.option('--config-file', default='config.toml.example', help='Example config file name')
-@click.option('--inventory-file', default='inventory.yml.example', help='Example inventory file name')
-@click.option('--vm-mapping-file', default='vm_mapping.toml.example', help='Example VM mapping file name')
+@click.option(
+    "--config-file", default="config.toml.example", help="Example config file name"
+)
+@click.option(
+    "--inventory-file",
+    default="inventory.yml.example",
+    help="Example inventory file name",
+)
+@click.option(
+    "--vm-mapping-file",
+    default="vm_mapping.toml.example",
+    help="Example VM mapping file name",
+)
 def init(config_file, inventory_file, vm_mapping_file):
     """Create example configuration and inventory files."""
     try:
@@ -352,7 +411,7 @@ def init(config_file, inventory_file, vm_mapping_file):
         else:
             create_example_config(config_file)
             logger.info(f"Created example configuration: {config_file}")
-        
+
         # Create example inventory
         if Path(inventory_file).exists():
             if not click.confirm(f"{inventory_file} already exists. Overwrite?"):
@@ -363,7 +422,7 @@ def init(config_file, inventory_file, vm_mapping_file):
         else:
             create_example_inventory(inventory_file)
             logger.info(f"Created example inventory: {inventory_file}")
-        
+
         # Create example VM mapping
         if Path(vm_mapping_file).exists():
             if not click.confirm(f"{vm_mapping_file} already exists. Overwrite?"):
@@ -374,15 +433,19 @@ def init(config_file, inventory_file, vm_mapping_file):
         else:
             create_example_vm_mapping(vm_mapping_file)
             logger.info(f"Created example VM mapping: {vm_mapping_file}")
-        
+
         logger.info("\nNext steps:")
         logger.info(f"1. Copy {config_file} to config.toml and edit with your settings")
         logger.info(f"2. Copy {inventory_file} to inventory.yml and add your hosts")
-        logger.info(f"3. Copy {vm_mapping_file} to vm_mapping.toml and map hosts to VMs")
+        logger.info(
+            f"3. Copy {vm_mapping_file} to vm_mapping.toml and map hosts to VMs"
+        )
         logger.info("4. Run 'miniupdate check --dry-run' to test checking updates")
         logger.info("5. Run 'miniupdate update --dry-run' to test automated updates")
-        logger.info("6. Run 'miniupdate update' to apply automated updates with snapshots")
-        
+        logger.info(
+            "6. Run 'miniupdate update' to apply automated updates with snapshots"
+        )
+
     except Exception as e:
         logger.error(f"Failed to create example files: {e}")
         return 1
@@ -393,28 +456,30 @@ def init(config_file, inventory_file, vm_mapping_file):
 def test_config(ctx):
     """Test configuration file and connectivity."""
     try:
-        config = Config(ctx.obj.get('config_path'))
+        config = Config(ctx.obj.get("config_path"))
         logger.info(f"✓ Configuration loaded from {config.config_path}")
-        
+
         # Test SMTP config
         smtp_config = config.smtp_config
         logger.info(f"✓ SMTP configuration loaded")
-        logger.info(f"  Server: {smtp_config['smtp_server']}:{smtp_config['smtp_port']}")
+        logger.info(
+            f"  Server: {smtp_config['smtp_server']}:{smtp_config['smtp_port']}"
+        )
         logger.info(f"  From: {smtp_config['from_email']}")
         logger.info(f"  To: {smtp_config['to_email']}")
-        
+
         # Test inventory
         inventory_parser = InventoryParser(config.inventory_path)
         hosts = inventory_parser.parse()
         logger.info(f"✓ Inventory loaded: {len(hosts)} hosts")
-        
+
         for host in hosts[:5]:  # Show first 5 hosts
             logger.info(f"  - {host.name} ({host.hostname}:{host.port})")
         if len(hosts) > 5:
             logger.info(f"  ... and {len(hosts) - 5} more")
-        
+
         logger.info("Configuration appears valid!")
-        
+
     except Exception as e:
         logger.error(f"Configuration error: {e}")
         return 1
@@ -432,5 +497,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
