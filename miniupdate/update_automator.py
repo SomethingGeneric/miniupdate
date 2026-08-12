@@ -618,7 +618,9 @@ class UpdateAutomator:
                     )
             else:
                 # Use default snapshot count limit to prevent unbounded growth
-                default_max_snapshots = self.update_config.get("default_max_snapshots", 5)
+                default_max_snapshots = self.update_config.get(
+                    "default_max_snapshots", 5
+                )
                 if len(automated_snapshots) > default_max_snapshots:
                     snapshots_to_delete = automated_snapshots[default_max_snapshots:]
                     logger.info(

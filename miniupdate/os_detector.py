@@ -280,12 +280,12 @@ class OSDetector:
         # Windows: check via PowerShell
         if distribution == "windows":
             exit_code, _, _ = self.connection.execute_command(
-                "powershell -Command \"Get-Command winget -ErrorAction SilentlyContinue\""
+                'powershell -Command "Get-Command winget -ErrorAction SilentlyContinue"'
             )
             if exit_code == 0:
                 return "winget"
             exit_code2, _, _ = self.connection.execute_command(
-                "powershell -Command \"Get-Command choco -ErrorAction SilentlyContinue\""
+                'powershell -Command "Get-Command choco -ErrorAction SilentlyContinue"'
             )
             if exit_code2 == 0:
                 return "choco"
