@@ -118,6 +118,12 @@ class Config:
             return {}
         return self.config['updates']
     
+
+    @property
+    def default_max_snapshots(self) -> int:
+        """Get default maximum number of snapshots to keep per VM."""
+        return self.update_config.get("default_max_snapshots", 5)
+
     @property
     def update_opt_out_hosts(self) -> List[str]:
         """Get list of hosts that should not receive automatic updates."""

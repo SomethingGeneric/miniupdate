@@ -19,6 +19,7 @@ class VMMapping(NamedTuple):
     vmid: int
     host_name: str
     max_snapshots: Optional[int] = None
+    snapshot: bool = True
 
 
 class VMMapper:
@@ -74,6 +75,7 @@ class VMMapper:
                 node = vm_info.get('node')
                 vmid = vm_info.get('vmid')
                 max_snapshots = vm_info.get('max_snapshots')
+                snapshot = vm_info.get("snapshot", True)
                 
                 if not node or not vmid:
                     logger.warning(f"Incomplete VM mapping for {host_name}: "
@@ -101,7 +103,8 @@ class VMMapper:
                     node=node,
                     vmid=vmid,
                     host_name=host_name,
-                    max_snapshots=max_snapshots
+                    max_snapshots=max_snapshots,
+                    snapshot=bool(snapshot)
                 )
             
             logger.info(f"Loaded VM mappings for {len(mappings)} hosts")

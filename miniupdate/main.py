@@ -135,6 +135,23 @@ def check(ctx, parallel, timeout, dry_run):
         hosts = inventory_parser.parse()
         logger.info(f"Loaded {len(hosts)} hosts from inventory")
         
+
+        # Auto-discover Proxmox VMs not in inventory
+        if config.proxmox_config and config.proxmox_config.get('auto_discover', False):
+            known = {h.name for h in hosts}
+            automator_for_discover = UpdateAutomator(config)
+            discovered = automator_for_discover.discover_proxmox_hosts(known)
+            if discovered:
+                logger.warning(f"Auto-discovered {len(discovered)} VM(s) not in inventory — running in notify-only mode")
+                for h in discovered:
+                    logger.warning(f"  + {h.name} ({h.hostname}) — add to inventory.yml to manage permanently")
+                hosts = hosts + discovered
+                config.config['updates'].setdefault('opt_out_hosts', [])
+                config.config['updates']['opt_out_hosts'] = (
+                    list(config.config['updates']['opt_out_hosts']) +
+                    [h.name for h in discovered]
+                )
+
         if not hosts:
             logger.error("No hosts found in inventory")
             return 1
@@ -225,6 +242,23 @@ def update(ctx, parallel, timeout, dry_run):
         hosts = inventory_parser.parse()
         logger.info(f"Loaded {len(hosts)} hosts from inventory")
         
+
+        # Auto-discover Proxmox VMs not in inventory
+        if config.proxmox_config and config.proxmox_config.get('auto_discover', False):
+            known = {h.name for h in hosts}
+            automator_for_discover = UpdateAutomator(config)
+            discovered = automator_for_discover.discover_proxmox_hosts(known)
+            if discovered:
+                logger.warning(f"Auto-discovered {len(discovered)} VM(s) not in inventory — running in notify-only mode")
+                for h in discovered:
+                    logger.warning(f"  + {h.name} ({h.hostname}) — add to inventory.yml to manage permanently")
+                hosts = hosts + discovered
+                config.config['updates'].setdefault('opt_out_hosts', [])
+                config.config['updates']['opt_out_hosts'] = (
+                    list(config.config['updates']['opt_out_hosts']) +
+                    [h.name for h in discovered]
+                )
+
         if not hosts:
             logger.error("No hosts found in inventory")
             return 1

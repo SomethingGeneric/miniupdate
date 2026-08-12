@@ -243,3 +243,58 @@ class ProxmoxClient:
         except Exception as e:
             logger.error(f"Failed to reboot VM {vmid}: {e}")
             return False
+    def list_all_running_vms(self) -> list:
+        """
+        List all running VMs across the cluster.
+
+        Returns:
+            List of dicts with keys: vmid, name, node, status
+        """
+        try:
+            if not self.ticket:
+                if not self.authenticate():
+                    logger.error("list_all_running_vms: authentication failed")
+                    return []
+            response = self._api_request('GET', '/cluster/resources', {'type': 'vm'})
+            vms = response.get('data', [])
+            running = [
+                {
+                    'vmid': int(vm['vmid']),
+                    'name': vm.get('name', str(vm['vmid'])),
+                    'node': vm['node'],
+                    'status': vm['status'],
+                }
+                for vm in vms
+                if vm.get('status') == 'running'
+            ]
+            logger.info(f"Found {len(running)} running VMs in cluster")
+            return running
+        except Exception as e:
+            logger.error(f"list_all_running_vms failed: {e}")
+            return []
+
+    def get_vm_ip_via_ga(self, node: str, vmid: int, subnet_prefix: str = "10.0.1.") -> 'str | None':
+        """
+        Get the primary IP address of a running VM via the QEMU guest agent.
+
+        Args:
+            node: Proxmox node name
+            vmid: VM ID
+            subnet_prefix: Only return IPs that start with this prefix
+
+        Returns:
+            IP address string or None if not found / GA not available
+        """
+        try:
+            path = f"/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces"
+            response = self._api_request('GET', path)
+            interfaces = response.get('data', {}).get('result', [])
+            for iface in interfaces:
+                for addr_entry in iface.get('ip-addresses', []):
+                    if addr_entry.get('ip-address-type') == 'ipv4':
+                        ip = addr_entry.get('ip-address', '')
+                        if ip.startswith(subnet_prefix):
+                            return ip
+        except Exception as e:
+            logger.debug(f"get_vm_ip_via_ga failed for vmid={vmid} on node={node}: {e}")
+        return None

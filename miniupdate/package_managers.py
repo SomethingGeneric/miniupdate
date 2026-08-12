@@ -845,6 +845,165 @@ class PkgAddPackageManager(PackageManager):
             return False, error_msg
 
 
+
+
+class WingetPackageManager(PackageManager):
+    """Package manager for Windows using winget."""
+
+    def refresh_cache(self) -> bool:
+        """Update winget sources (may fail silently)."""
+        try:
+            self.connection.execute_command(
+                'powershell -NonInteractive -Command "winget source update"',
+                timeout=60
+            )
+        except Exception:
+            pass
+        return True
+
+    def check_updates(self) -> List[PackageUpdate]:
+        """Check for available updates via winget."""
+        updates = []
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'powershell -NonInteractive -Command "winget upgrade --include-unknown 2>$null"',
+                timeout=120
+            )
+            if exit_code != 0 or not stdout.strip():
+                return updates
+
+            lines = stdout.strip().split('\n')
+            # Find the header separator line (all dashes)
+            header_done = False
+            for line in lines:
+                stripped = line.strip()
+                if not header_done:
+                    if re.match(r'^[-\s]+$', stripped) and len(stripped) > 10:
+                        header_done = True
+                    continue
+                if not stripped or stripped.startswith('\r'):
+                    continue
+                # Winget table: Name  Id  Version  Available  Source
+                # Split on 2+ spaces to handle column spacing
+                parts = re.split(r'\s{2,}', stripped)
+                if len(parts) >= 4:
+                    name = parts[0].strip()
+                    current = parts[2].strip() if len(parts) > 2 else 'unknown'
+                    available = parts[3].strip() if len(parts) > 3 else 'unknown'
+                    if name and available and available != 'Unknown':
+                        updates.append(PackageUpdate(
+                            name=name,
+                            current_version=current,
+                            available_version=available,
+                            repository='winget'
+                        ))
+        except Exception as e:
+            logger.error(f"Failed to check winget updates: {e}")
+        return updates
+
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
+        """Apply all available winget updates."""
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                'powershell -NonInteractive -Command '
+                '"winget upgrade --all --silent --include-unknown '
+                '--accept-source-agreements --accept-package-agreements 2>&1"',
+                timeout=1800
+            )
+            if exit_code == 0:
+                logger.info("Successfully applied winget updates")
+                return True, None
+            else:
+                output = f"winget upgrade failed (exit {exit_code})\nSTDOUT: {stdout}\nSTDERR: {stderr}"
+                logger.error(f"winget upgrade failed: {stderr}")
+                return False, output
+        except Exception as e:
+            error_msg = f"Error applying winget updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
+
+class WindowsUpdatePackageManager(PackageManager):
+    """Package manager for Windows using Windows Update COM API or PSWindowsUpdate."""
+
+    def refresh_cache(self) -> bool:
+        """No cache refresh needed for Windows Update."""
+        return True
+
+    def check_updates(self) -> List[PackageUpdate]:
+        """Check for available Windows updates via COM API."""
+        updates = []
+        ps_script = (
+            "$s = New-Object -ComObject Microsoft.Update.Session; "
+            "$q = $s.CreateUpdateSearcher().Search(\'IsInstalled=0 and IsHidden=0\'); "
+            "$q.Updates | ForEach-Object { Write-Output \"$($_.Title)|$($_.MsrcSeverity)\" }"
+        )
+        try:
+            exit_code, stdout, stderr = self.connection.execute_command(
+                f'powershell -NonInteractive -Command "{ps_script}"',
+                timeout=300
+            )
+            if exit_code != 0 or not stdout.strip():
+                return updates
+            for line in stdout.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split('|', 1)
+                title = parts[0].strip()
+                severity = parts[1].strip() if len(parts) > 1 else ''
+                is_security = severity in ('Critical', 'Important')
+                if title:
+                    updates.append(PackageUpdate(
+                        name=title,
+                        current_version='installed',
+                        available_version='pending',
+                        repository='Windows Update',
+                        security=is_security
+                    ))
+        except Exception as e:
+            logger.error(f"Failed to check Windows updates: {e}")
+        return updates
+
+    def apply_updates(self) -> tuple[bool, Optional[str]]:
+        """Apply Windows updates using PSWindowsUpdate or COM API."""
+        # Try PSWindowsUpdate first
+        check_cmd = (
+            'powershell -NonInteractive -Command '
+            '"Get-Command Install-WindowsUpdate -ErrorAction SilentlyContinue"'
+        )
+        exit_code, stdout, _ = self.connection.execute_command(check_cmd, timeout=30)
+        try:
+            if exit_code == 0 and stdout.strip():
+                # PSWindowsUpdate is available
+                ps_cmd = (
+                    'powershell -NonInteractive -Command '
+                    '"Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -IgnoreReboot 2>&1"'
+                )
+                exit_code, stdout, stderr = self.connection.execute_command(ps_cmd, timeout=3600)
+                if exit_code == 0:
+                    return True, stdout
+                return False, f"PSWindowsUpdate failed: {stderr}"
+            else:
+                # Fall back to COM API installer
+                ps_script = (
+                    "$s = New-Object -ComObject Microsoft.Update.Session; "
+                    "$q = $s.CreateUpdateSearcher().Search(\'IsInstalled=0 and IsHidden=0\'); "
+                    "$dl = $s.CreateUpdateDownloader(); $dl.Updates = $q.Updates; $dl.Download(); "
+                    "$inst = $s.CreateUpdateInstaller(); $inst.Updates = $q.Updates; "
+                    "$result = $inst.Install(); "
+                    "Write-Output \"Result: $($result.ResultCode) Reboot: $($result.RebootRequired)\""
+                )
+                ps_cmd = f'powershell -NonInteractive -Command "{ps_script}"'
+                exit_code, stdout, stderr = self.connection.execute_command(ps_cmd, timeout=3600)
+                if exit_code == 0:
+                    return True, stdout
+                return False, f"Windows Update COM failed: {stderr}"
+        except Exception as e:
+            error_msg = f"Error applying Windows updates: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
 def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[PackageManager]:
     """Get appropriate package manager instance for the OS."""
     manager_map = {
@@ -860,6 +1019,12 @@ def get_package_manager(connection: SSHConnection, os_info: OSInfo) -> Optional[
     pm_class = manager_map.get(os_info.package_manager)
     if pm_class:
         return pm_class(connection, os_info)
+    
+    # Windows package managers
+    if os_info.package_manager == 'winget':
+        return WingetPackageManager(connection, os_info)
+    elif os_info.package_manager in ('windows_update', 'choco'):
+        return WindowsUpdatePackageManager(connection, os_info)
     
     logger.warning(f"Unsupported package manager: {os_info.package_manager}")
     return None

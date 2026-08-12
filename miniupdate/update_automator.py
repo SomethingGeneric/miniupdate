@@ -241,6 +241,10 @@ class UpdateAutomator:
                 # If no updates available, nothing to do
                 if not updates:
                     logger.info(f"No updates available for {host.name}")
+                    # Still run cleanup to handle snapshot buildup on idle VMs
+                    if (self.proxmox_client and vm_mapping and
+                            self.update_config.get("cleanup_snapshots", False)):
+                        self._cleanup_old_snapshots(vm_mapping)
                     return AutomatedUpdateReport(
                         host=host,
                         vm_mapping=vm_mapping,
@@ -257,18 +261,21 @@ class UpdateAutomator:
                 
                 # Create snapshot if Proxmox is configured and VM mapping exists
                 if self.proxmox_client and vm_mapping:
-                    snapshot_name = self._create_snapshot(vm_mapping, start_time)
-                    if not snapshot_name:
-                        return AutomatedUpdateReport(
-                            host=host,
-                            vm_mapping=vm_mapping,
-                            update_report=update_report,
-                            result=UpdateResult.FAILED_SNAPSHOT,
-                            snapshot_name=None,
-                            error_details="Failed to create VM snapshot",
-                            start_time=start_time,
-                            end_time=datetime.now()
-                        )
+                    if not vm_mapping.snapshot:
+                        logger.info(f"Snapshots disabled for {host.name} (snapshot=false in vm_mapping)")
+                    else:
+                        snapshot_name = self._create_snapshot(vm_mapping, start_time)
+                        if not snapshot_name:
+                            return AutomatedUpdateReport(
+                                host=host,
+                                vm_mapping=vm_mapping,
+                                update_report=update_report,
+                                result=UpdateResult.FAILED_SNAPSHOT,
+                                snapshot_name=None,
+                                error_details="Failed to create VM snapshot",
+                                start_time=start_time,
+                                end_time=datetime.now()
+                            )
                 
                 # Apply updates
                 logger.info(f"Applying {len(updates)} updates on {host.name}")
@@ -525,7 +532,7 @@ class UpdateAutomator:
                                f"for VM {vm_mapping.vmid}, deleting {len(snapshots_to_delete)} older ones")
             else:
                 # Use default snapshot count limit to prevent unbounded growth
-                default_max_snapshots = 5
+                default_max_snapshots = self.update_config.get(default_max_snapshots, 5)
                 if len(automated_snapshots) > default_max_snapshots:
                     snapshots_to_delete = automated_snapshots[default_max_snapshots:]
                     logger.info(f"Default snapshot quota: keeping {default_max_snapshots} newest snapshots "
@@ -553,3 +560,38 @@ class UpdateAutomator:
                     
         except Exception as e:
             logger.warning(f"Failed to cleanup old snapshots for VM {vm_mapping.vmid}: {e}")
+    def discover_proxmox_hosts(self, known_hostnames: set, subnet_prefix: str = "10.0.1.") -> list:
+        """
+        Query Proxmox for all running VMs with guest agent IPs not already in inventory.
+        Returns Host objects for new VMs in notify-only mode.
+
+        Args:
+            known_hostnames: Set of host names already in the inventory
+            subnet_prefix: Only consider IPs starting with this prefix
+
+        Returns:
+            List of Host objects for discovered VMs not in the inventory
+        """
+        if self.proxmox_client is None:
+            return []
+
+        discovered = []
+        try:
+            self.proxmox_client.authenticate()
+            vms = self.proxmox_client.list_all_running_vms()
+            for vm in vms:
+                name = vm['name']
+                node = vm['node']
+                vmid = vm['vmid']
+                ip = self.proxmox_client.get_vm_ip_via_ga(node, vmid, subnet_prefix)
+                if ip and name not in known_hostnames:
+                    host = Host(name=name, hostname=ip, port=22)
+                    discovered.append(host)
+                    logger.info(
+                        f"Auto-discovered VM not in inventory: {name} ({ip})"
+                        f" — running in notify-only mode"
+                    )
+        except Exception as e:
+            logger.warning(f"discover_proxmox_hosts encountered an error: {e}")
+
+        return discovered

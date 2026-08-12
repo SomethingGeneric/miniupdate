@@ -46,6 +46,8 @@ class OSDetector:
         'pkg': ['/usr/sbin/pkg'],  # FreeBSD
         'pkg_add': ['/usr/sbin/pkg_add'],  # OpenBSD
         'brew': ['/usr/local/bin/brew', '/opt/homebrew/bin/brew'],  # macOS
+        'winget': ['/c/Program Files/WindowsApps/Microsoft.DesktopAppInstaller_*/winget.exe',
+                   'C:/Windows/System32/winget.exe'],  # Windows
     }
     
     # OS family detection patterns
@@ -67,6 +69,7 @@ class OSDetector:
         'openbsd': ('openbsd', 'pkg_add'),
         'darwin': ('darwin', 'brew'),
         'macos': ('darwin', 'brew'),
+        'windows': ('windows', 'winget'),
     }
     
     def __init__(self, connection: SSHConnection):
@@ -114,7 +117,13 @@ class OSDetector:
     def _get_uname_info(self) -> Dict[str, str]:
         """Get uname information."""
         exit_code, stdout, stderr = self.connection.execute_command('uname -a')
-        if exit_code != 0:
+        if exit_code != 0 or not stdout.strip():
+            # Try Windows detection fallback
+            win_exit, win_out, _ = self.connection.execute_command(
+                'powershell -NonInteractive -Command "$env:OS"'
+            )
+            if win_exit == 0 and 'Windows_NT' in win_out:
+                return {'kernel_name': 'windows', 'full': win_out.strip()}
             return {}
         
         uname_output = stdout.strip()
@@ -199,6 +208,10 @@ class OSDetector:
             elif kernel_name == 'openbsd':
                 distribution = 'openbsd'
                 version = uname_info.get('kernel_release', 'unknown')
+            elif kernel_name == 'windows':
+                os_family = 'windows'
+                distribution = 'windows'
+                version = uname_info.get('full', 'unknown')
         
         # Determine OS family from distribution
         for pattern, (family, _) in self.OS_PATTERNS.items():
@@ -246,11 +259,27 @@ class OSDetector:
             return 'openbsd'
         elif 'darwin' in distribution or 'macos' in distribution:
             return 'macos'
+        elif 'windows' in distribution:
+            return 'windows'
         
         return distribution
     
     def _detect_package_manager(self, distribution: str) -> str:
         """Detect package manager based on distribution and available commands."""
+        # Windows: check winget, choco, then fall back to windows_update
+        if distribution == 'windows':
+            wg_exit, _, _ = self.connection.execute_command(
+                'powershell -NonInteractive -Command "winget --version"'
+            )
+            if wg_exit == 0:
+                return 'winget'
+            choco_exit, _, _ = self.connection.execute_command(
+                'powershell -NonInteractive -Command "choco --version"'
+            )
+            if choco_exit == 0:
+                return 'choco'
+            return 'windows_update'
+
         # First try based on known distribution patterns
         for pattern, (_, default_pm) in self.OS_PATTERNS.items():
             if pattern in distribution.lower():
