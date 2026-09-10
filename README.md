@@ -1,3 +1,5 @@
+> **Repo moved:** development continues at **[git.goober.cloud/matt/miniupdate](https://git.goober.cloud/matt/miniupdate)** (Forgejo). This GitHub copy is retained as an archived, read-only mirror.
+
 # miniupdate
 
 Minimal patch check script for virtual guests
